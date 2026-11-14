@@ -40,9 +40,16 @@ across bins; boh changing a folder's sharing (the user does it in the provider,
 boh shows it and links there); several accounts of the same provider at once;
 running scripts of HTML pastes; a server of our own, even a token proxy.
 
-Owned files: `web/src/` (the app, providers, renderers, `render.html`),
-`scripts/build-web.mjs` and `scripts/build-site.mjs` (new entry points and
-config injection), `tests/`, `docs/`.
+**The published site offers Google Drive only** (plan step 11): it is the one
+service free at any number of users. Dropbox and OneDrive are implemented and
+tested but switched off by the build configuration (section 7.4); everything
+below describes all three, as a build that switches them on behaves.
+
+Owned files: `web/boh.config.json`, `web/src/` (the app, `providers/`,
+`render/`, `ui/`), `scripts/config.mjs` and `scripts/csp.mjs` (build
+configuration and page policies), `scripts/build-web.mjs`,
+`scripts/build-site.mjs` and `scripts/smoke-site.mjs` (entry points and
+injection), `tests/`, `docs/`.
 
 ## 2. Design goals
 
@@ -79,9 +86,9 @@ config injection), `tests/`, `docs/`.
 │       │ renderer, options)                                      │
 │  ┌────▼───────────────────────────────────────────┐             │
 │  │ <iframe sandbox="allow-scripts" src=render.html>│ opaque     │
-│  │  render.js: markdown, html, highlight, pdf      │ origin     │
+│  │  render.js: markdown, html, highlight           │ origin     │
 │  │  ┌──────────────────────────────┐               │            │
-│  │  │ <iframe sandbox srcdoc> HTML │ no scripts    │            │
+│  │  │ <iframe sandbox srcdoc> doc  │ no scripts    │            │
 │  │  └──────────────────────────────┘               │            │
 │  └─────────────────────────────────────────────────┘            │
 └─────────────────────────────────────────────────────────────────┘
@@ -122,19 +129,28 @@ OneDrive can be connected together. Each provider module owns its sign-in:
 
 | Provider | Flow | Token lifetime | Scopes |
 |---|---|---|---|
-| Google Drive (`gd`) | Google Identity Services token client in a popup; silent renewal with `prompt: ''` | Access token ~1 h, no refresh token in the browser | `drive.file`, `drive.appdata` |
+| Google Drive (`gd`) | OAuth implicit grant (`response_type=token`) in a popup, our own code | Access token ~1 h, no refresh token in the browser; the user signs in again | `drive.file`, `drive.appdata` |
 | Dropbox (`db`) | Authorization code + PKCE, popup, `token_access_type=offline` | Short access token + refresh token | `files.metadata.read`, `files.content.read`, `files.content.write`, `sharing.read`, `sharing.write`, `account_info.read` (Full Dropbox app) |
 | OneDrive (`od`) | Microsoft identity platform, SPA client, authorization code + PKCE, popup, `common` authority | Access token ~1 h, refresh token (SPA, 24 h rolling) | `Files.ReadWrite`, `Files.Read.All`, `Files.ReadWrite.AppFolder`, `User.Read`, `offline_access` |
 
-PKCE is a small module of our own (Web Crypto), not MSAL or the Dropbox SDK.
+Sign-in and PKCE are small modules of our own (`web/src/oauth.ts`,
+`web/src/pkce.ts`, Web Crypto), not Google Identity Services, MSAL or the
+Dropbox SDK. The popup is opened on `about:blank` inside the click (popup
+blockers), then sent to the authorization endpoint once the PKCE challenge is
+computed.
 Access tokens stay in memory. Refresh tokens are kept in `localStorage` only
 when the user ticks *Stay signed in on this browser* (default on); otherwise
 in `sessionStorage`. *Disconnect* revokes where the provider has a revoke
 endpoint and clears everything stored for that account.
 
-The OAuth redirect target is `auth.html`, a tiny page that posts the code (or
-the error) to its opener and closes. Client ids and the Google API key are
-public build configuration (section 7.4).
+The OAuth redirect target is `auth.html`, a tiny page that posts the redirect's
+parameters on the `BroadcastChannel` `boh-auth` and closes. Not
+`window.opener`: the providers' cross-origin-opener policies sever it, and for
+the same reason boh never trusts `popup.closed`; a sign-in waits at most 5
+minutes or until cancelled. The answer is matched by `state`. A provider's
+stored account survives an expired token, so the UI can say "sign in again"
+rather than forget the bins. Client ids and the Google API key are public
+build configuration (section 7.4).
 
 ### 4.2 Bins
 
@@ -190,11 +206,11 @@ https://<org>.github.io/boh/#v1/<provider>/<ref>[?r=<renderer>&n=<name>]
 - `<provider>` is `gd`, `db` or `od`. `<ref>` is base64url of a small
   provider-specific value, opaque to the app:
 
-| Provider | `ref` | Anonymous fetch (if the file allows it) |
+| Provider | `ref` value (before base64url) | Anonymous fetch (if the file allows it) |
 |---|---|---|
-| Drive | file id (plus `resourceKey` if present) | `files.get?alt=media&key=<API key>` |
-| Dropbox | the file's shared link URL | raw download of the shared link (open question, plan step 1) |
-| OneDrive | the sharing URL, used as Graph `shares/u!<b64>` | none known; recipient signs in with any Microsoft account (open question, plan step 1) |
+| Drive | `<file id>` or `<file id>/<resourceKey>` | `files.get?alt=media&key=<API key>` |
+| Dropbox | the file's shared link URL, or `id:<file id>` (fallback, below) | `HEAD`/`GET` of the link on `dl.dropboxusercontent.com` (open question, plan step 1) |
+| OneDrive | `u:<sharing URL>` (public) or `i:<driveId>/<itemId>` (members, private) | none: Graph needs a token, so every viewer signs in with any Microsoft account |
 
 - `r` overrides the renderer; `n` is a display name used before metadata
   loads. Both are hints; the paste's metadata wins for security decisions.
@@ -205,13 +221,14 @@ Share reference per bin visibility, made right after upload:
 | Visibility | Drive | Dropbox | OneDrive |
 |---|---|---|---|
 | `public` | none needed (the folder's "anyone with the link" permission is inherited) | shared link, audience `public` | sharing link, type `view`, scope `anonymous` |
-| `members` | none needed (inherited folder permissions) | shared link, audience `no_one` (existing members only) | link to the item, existing permissions apply (scope `users`/`organization` as allowed) |
-| `private` | none | shared link, audience `no_one` | as members |
+| `members` | none needed (inherited folder permissions) | shared link, audience `no_one` (existing members only); `id:` ref when the account cannot set an audience (Dropbox Basic) | `i:` ref: the viewer's own token and permissions apply |
+| `private` | none | as members | as members |
 
 boh never sets a broader audience than the bin's visibility. If the provider
 or the account policy refuses (e.g. work accounts with anonymous links
-disabled), the paste stays uploaded and boh says the link only works for
-people who already have access.
+disabled), `share` throws `unsupported`: the paste stays uploaded and boh says
+it could not make a link, with *Open in <provider>*. An existing Dropbox link
+of the file is reused as it is (boh did not widen it).
 
 ### 4.5 Pastes and formats
 
@@ -240,56 +257,85 @@ the provider's simple-upload limit unless the plan adds resumable upload.
 | `pdf` | pdf | app | Blob URL in an `<iframe>` (browser viewer); fallback *Download* |
 | `download` | anything else | app | Name, size, type, *Download* |
 
-Text-like renderers (`markdown`, `html`) also offer *Source*, which switches
-to `text`. Remote resources (images, styles, fonts) in Markdown and HTML are
+The app picks every blob's MIME type from the renderer and extension
+(`blobType`), never from the provider, so no paste becomes `text/html` on the
+app's origin; SVG images use a `data:` URL, not a `blob:` one, so an SVG
+opened on its own tab cannot run on boh's origin either. A file of unknown type
+up to 5 MiB that looks like UTF-8 text is shown as text.
+
+Text, Markdown and HTML can be switched among one another (*Show as*, e.g.
+Markdown source as `text`). Remote resources (images, styles, fonts) in Markdown and HTML are
 **blocked by default** (DOMPurify hook rewrites their URLs to a placeholder)
 and loaded only after the viewer presses *Load remote content*, because
 loading them tells third parties that someone opened the paste. Links open in
 a new tab with `rel=noopener noreferrer`.
 
-Highlighting, Markdown and sanitizing live in `render.js` only, loaded lazily
-by the frame, so the app bundle stays small.
+In the render frame every text, Markdown or HTML paste becomes one sanitized
+document shown in a nested `srcdoc` frame sandboxed with `allow-same-origin
+allow-popups allow-popups-to-escape-sandbox` and **no** `allow-scripts`
+(`allow-same-origin` only shares the render frame's own opaque origin, which
+lets the frame count blocked resources). The document carries its own
+`<meta>` policy: without *Load remote content* it allows only `data:` images,
+fonts and media and inline styles, which also stops CSS `url()` that the
+sanitizer cannot see; with it, `https:` as well. Highlighting, Markdown and
+sanitizing live in `render.js` only, so the app bundle stays small. The render
+frame has a fixed height in the app and scrolls inside.
 
 ## 5. Public contracts
 
 ### 5.1 `Provider` (web/src/providers/provider.ts)
 
-Every provider module exports a factory `createXxxProvider(env)` returning:
+Every provider module exports a factory (`createDriveProvider(env, picker?)`,
+`createDropboxProvider(env)`, `createOneDriveProvider(env)`) returning:
 
 | Member | Contract |
 |---|---|
 | `id: 'gd' \| 'db' \| 'od'`, `label` | Stable code used in links and config |
-| `signIn(interactive): Promise<Account>` | Popup when `interactive`; silent otherwise; rejects `AuthError` (`reason`: `cancelled`, `popup_blocked`, `denied`, `expired`) |
-| `signOut(): Promise<void>` | Revokes when possible, clears stored tokens |
-| `account(): Account \| null` | `{ id, name, email? }` of the connected account |
-| `readConfig() / writeConfig(cfg, rev)` | Section 4.3; `writeConfig` rejects `ConflictError` on revision mismatch |
-| `pickFolder(): Promise<FolderRef \| null>` | Picker or folder browser; `null` when cancelled |
+| `configured`, `maxUploadBytes` | Whether the build has a client id; the largest upload |
+| `signIn({ stay, signal? }): Promise<Account>` | Opens the popup synchronously (call it from the click); rejects `AuthError` (`cancelled`, `popup_blocked`, `denied`, `expired`, `failed`) or `ProviderError('not_configured')` |
+| `signOut(): Promise<void>` | Revokes when possible, clears stored tokens; never throws |
+| `account(): Account \| null`, `setStay(stay)` | `{ id, name, email? }` of the connected account; move the tokens between `localStorage` and `sessionStorage` |
+| `readConfig(): { text, rev }` / `writeConfig(text, rev)` | Section 4.3; `rev` `null` means "must not exist"; rejects `ConflictError` on a revision mismatch |
+| `pickFolder?()` | Drive only: Google's Picker; `null` when cancelled |
+| `listFolders?(parent \| null)` | Dropbox and OneDrive: folders for boh's browser (top level includes folders shared with the user) |
 | `createFolder(name, parent?)` | New folder; returns `FolderRef` |
-| `describeSharing(folder): Promise<Sharing>` | `{ kind: 'public' \| 'members' \| 'private' \| 'unknown', members?: number, manageUrl }` |
+| `describeSharing(folder): Promise<Sharing>` | `{ kind: 'public' \| 'members' \| 'private' \| 'unknown', members?, manageUrl? }` |
 | `list(folder, cursor?)` | `{ items: PasteMeta[], cursor? }`, newest first where the API allows |
-| `upload(folder, name, blob, mime)` | `PasteMeta`; never overwrites |
-| `share(meta, visibility)` | Returns the `ref` for the link (section 4.4) |
+| `upload(folder, name, blob)` | `PasteMeta`; never overwrites (the provider's auto-rename) |
+| `share(meta, visibility)` | The link `ref` (section 4.4); `unsupported` when refused |
 | `remove(meta)` | Deletes (to the provider's trash where it has one) |
-| `openRef(ref): Promise<PasteMeta>` | Metadata of a linked paste; anonymous first, then with token |
-| `fetch(meta, { maxBytes, signal })` | `Blob`; rejects `TooLargeError` above `maxBytes` |
-| `webUrl(meta)` | URL of the file in the provider's UI |
+| `openRef(ref): Promise<PasteMeta>` | Metadata of a linked paste; anonymous first, then with the viewer's token |
+| `grantAccess?(ref): Promise<boolean>` | Drive only: the Picker preset to the file |
+| `fetch(meta, { maxBytes, signal })` | `Blob`; rejects `TooLargeError` above `maxBytes`, checked before and while downloading |
+| `folderUrl(folder)` | The folder in the provider's UI (`PasteMeta.webUrl` for files) |
 
-Errors are `Error` subclasses with a stable `reason` (`ProviderError` with
-`not_found`, `forbidden`, `needs_sign_in`, `needs_grant`, `rate_limited`,
-`network`, `unsupported`). The app maps `needs_sign_in` and `needs_grant` to
-the steps of the recipient sequence; it never parses provider messages.
+Errors are `Error` subclasses with a stable `reason` (`web/src/errors.ts`):
+`ProviderError` with `not_found`, `forbidden`, `needs_sign_in`, `needs_grant`,
+`rate_limited`, `network`, `unsupported`, `not_configured`, `failed`;
+`ConflictError` (`conflict`), `TooLargeError` (`too_large`), `AuthError`,
+`LinkError` (`invalid_link`), `ConfigFileError` (`bad_config`,
+`newer_config`). The app maps `needs_sign_in` and `needs_grant` to the steps of
+the recipient sequence; it never parses provider messages. An anonymous 403/404
+becomes `needs_sign_in` when the viewer is signed out; a signed-in Drive 403/404
+becomes `needs_grant` (under `drive.file` the file is invisible until picked),
+and still `needs_grant` after the Picker means no access.
 
-`env` carries the base URLs of the APIs, client ids, the API key, `fetch`, and
-an `openPopup` function, so tests replace each with fakes (section 7.3).
+`env` (`ProviderEnv`) carries the build configuration (endpoints, client ids,
+API key), `fetch`, the token store, `openPopup` and the redirect URI, and a
+clock, so tests replace each with fakes (section 7.3).
 
 ### 5.2 Render frame protocol
 
-The app posts to the render frame `{ type: 'render', id, renderer, name,
-bytes: ArrayBuffer, options: { remote: boolean, wrap: boolean, theme } }`,
-transferring the buffer. The frame answers `{ type: 'rendered', id, height }`,
-`{ type: 'error', id, reason }`, and `{ type: 'open', url }` for links. The app
-accepts messages only from that frame's `contentWindow`; the frame accepts
-only from `parent` and ignores the origin (it is opaque by design).
+`web/src/render/protocol.ts`. The frame posts `{ type: 'ready' }` when loaded.
+The app posts `{ type: 'render', id, renderer: 'text' | 'markdown' | 'html',
+name, bytes: ArrayBuffer, options: { remote, wrap, highlight, language } }`,
+transferring the buffer (with target origin `*`: the frame's origin is opaque
+and only the paste's own bytes are sent). The frame answers `{ type:
+'rendered', id, blocked }` (remote resources left out) or `{ type: 'error',
+id, reason }`; the app waits at most 15 s. Links in a paste open in a new tab
+by themselves (`target=_blank`, popups escape the sandbox), so there is no
+`open` message. The app accepts messages only from that frame's
+`contentWindow`; the frame accepts only from `parent`.
 
 ## 6. Design decisions
 
@@ -299,8 +345,14 @@ only from `parent` and ignores the origin (it is opaque by design).
 | Config per account, in that account | One primary account holds all config | No "which account is primary" choice; signing in to a provider brings its bins; disconnecting one provider leaves the others intact |
 | Config in the cloud, cached locally | Browser only | Follows the user to other devices with no boh server |
 | boh link through boh, fragment-based | Sharing the provider's own link | One link format, a chosen renderer, an anonymous path where possible; the provider's link is still one click away (*Open in provider*) |
-| Our own PKCE, no SDKs | MSAL.js, Dropbox SDK, gapi client | Small, auditable, same code for two providers; only Google's sign-in and Picker scripts are external (required by Google) |
-| Render frame from `render.html` with `sandbox="allow-scripts"`, no `allow-same-origin` | Rendering in the app's DOM; `srcdoc` only | The frame has an opaque origin, so even a sanitizer bypass cannot read tokens or config; it needs scripts for its own renderer, so it is a real page with its own CSP rather than a `srcdoc` that would inherit the app's |
+| Our own OAuth popup and PKCE, no SDKs | Google Identity Services, MSAL.js, Dropbox SDK, gapi client | Small, auditable, one flow for three providers, testable end to end against fakes; only Google's Picker script is external (required by Google) |
+| Sign-in answer over `BroadcastChannel` | `window.opener.postMessage`, polling `popup.closed` | Cross-origin-opener policies on the providers' pages cut the opener and make `closed` lie |
+| OneDrive members links by drive and item id | A Graph "existing access" link | Graph has no such link type for personal accounts; the id works with the viewer's own permissions everywhere |
+| Dropbox `id:` ref when `no_one` links are refused | Making a public link instead | Never widen access (goal 2); members open the file by id with their own token |
+| Render frame from `render.html` with `sandbox="allow-scripts"`, no `allow-same-origin`; the paste in a nested script-less `srcdoc` frame with its own `<meta>` policy | Rendering in the app's DOM; one `srcdoc` frame | The frame has an opaque origin, so even a sanitizer bypass cannot read tokens or config; it needs scripts for its own renderer, so it is a real page with its own CSP rather than a `srcdoc` that would inherit the app's. The nested document runs nothing and switches remote loading per paste, which a page-wide CSP cannot |
+| Drive settings conflict check reads the version, then writes | Conditional write | Drive v3 has no conditional update; the window is milliseconds and a lost update is still caught on the next write by the other device |
+| Bundled libraries' licenses in `third-party-licenses.txt` | Keeping their legal comments in `render.js` | One readable file, linked from the footer |
+| Google Drive only on the site; Dropbox and OneDrive switched off at build time, not deleted | Shipping all three; deleting the two | Drive is the only service free at scale (Dropbox needs production review past 50 users, Microsoft an Entra tenant); the code stays tested so switching one on is a configuration change |
 | HTML pastes sanitized and script-free | Running paste scripts in a sandbox | A pastebin shows content; running it invites phishing pages on our origin's name. Can be revisited behind an explicit button |
 | Remote content blocked until asked | Always load | Remote images in a paste are a read receipt to their host |
 | Visibility label stored, sharing read live | Storing sharing state | The provider is the authority (goal 2); sharing changes outside boh |
@@ -313,16 +365,17 @@ only from `parent` and ignores the origin (it is opaque by design).
 ### 7.1 Security
 
 1. The app's CSP: `default-src 'none'`; `script-src 'self'
-   https://accounts.google.com https://apis.google.com`; `connect-src` the
-   provider API hosts only; `frame-src 'self' blob: https://docs.google.com
-   https://accounts.google.com` (Picker, sign-in); `img-src 'self' blob:
-   data:`; `media-src blob:`; `base-uri 'none'`; `form-action 'none'`. The
-   exact host list is kept in one place (`web/src/csp.ts` or the build) and a
-   unit test checks the built pages against it.
-2. `render.html` CSP: `script-src 'self'`; `connect-src 'none'`; `img-src`,
-   `style-src` and `font-src` allow `https:` only for the remote-content mode,
-   enforced by the sanitizer hook (the CSP is the outer fence, the hook the
-   inner one).
+   https://apis.google.com` (Picker); `connect-src` the provider API origins of
+   the build configuration plus OneDrive's download hosts; `frame-src 'self'
+   blob: https://docs.google.com` (render frame, PDF, Picker); `img-src 'self'
+   blob: data:`; `media-src blob:`; `style-src 'self' 'unsafe-inline'`;
+   `base-uri 'none'`; `form-action 'none'`. `scripts/csp.mjs` derives every
+   page's policy from the configuration; `build-web` writes it into the page
+   and unit tests check it.
+2. `render.html` CSP: `script-src 'self'`; no `connect-src`; `img-src`,
+   `style-src`, `font-src` and `media-src` allow `https:` as the outer fence;
+   the nested document's own policy and the sanitizer hook block remote
+   resources until the viewer asks (section 4.6).
 3. Tokens and config never enter the render frame; only the paste bytes do.
 4. Paste content never becomes HTML in the app's document; the app inserts
    names and metadata as text only.
@@ -345,19 +398,36 @@ only from `parent` and ignores the origin (it is opaque by design).
 
 Providers are tested against loopback fakes of the endpoints they use
 (`tests/support/fake-drive.ts`, `fake-dropbox.ts`, `fake-graph.ts`), injected
-through `env`; no test reaches the internet. Browser tests use a test build of
-the site whose provider `env` points at the fakes and whose sign-in returns a
-fake token without a popup. Security tests check that a hostile HTML or
-Markdown paste does not run script, cannot reach `parent` state, and does not
-load remote URLs until asked.
+through `env`; no test reaches the internet. The fakes implement the sign-in
+too (implicit grant; code with PKCE verification and refresh tokens), so the
+real popup flow runs: in Node a stand-in window follows the redirect and posts
+on the channel, in Chrome the real `auth.html` does. Browser tests use a build
+of the site whose endpoints point at the fakes and whose Google Picker is a
+prompt-based stand-in (`tests/support/app-harness.ts`). Security tests check
+that a hostile HTML, Markdown or SVG paste does not run script, that the render
+frame's origin is opaque, and that remote URLs load only when asked.
 
 ### 7.4 Build configuration
 
-Client ids (Google, Dropbox, Microsoft) and the Google API key are public and
-committed in `web/boh.config.json`; `BOH_GOOGLE_CLIENT_ID`,
-`BOH_DROPBOX_APP_KEY`, `BOH_MS_CLIENT_ID` and `BOH_GOOGLE_API_KEY` override
-them at build time for forks and development. The Google API key is restricted
-in the Google console to the Drive API and to the site's referrers.
+`providers` lists the providers a build offers (default `["gd"]`; unknown codes
+fail the build). esbuild gets one boolean constant per provider (`__BOH_GD__`,
+`__BOH_DB__`, `__BOH_OD__`), so `main.ts` replaces a provider that is off with
+`createDisabledProvider` (`web/src/providers/disabled.ts`: not configured,
+every call `not_configured`) and its module is tree-shaken out of `main.js`;
+`appCsp` leaves its hosts out (`connect-src 'none'` when none is on). The
+viewer answers a link to a provider that is off with "this boh site does not
+support it", without a sign-in button.
+
+Client ids (Google, Dropbox, Microsoft), the Google API key and the Google
+Cloud project number (the Picker's app id) are public and committed in
+`web/boh.config.json`; `BOH_GOOGLE_CLIENT_ID`, `BOH_GOOGLE_API_KEY`,
+`BOH_GOOGLE_APP_ID`, `BOH_DROPBOX_APP_KEY` and `BOH_MS_CLIENT_ID` override them
+at build time (the Pages workflow passes repository variables). A provider
+without an id is shown as not configured. `scripts/config.mjs` resolves the
+configuration, which esbuild injects as `__BOH_CONFIG__`; the tests override
+every endpoint with loopback fakes and swap the Picker for a prompt-based
+stand-in (`google.testPicker`). The Google API key is restricted in the Google
+console to the Drive and Picker APIs and to the site's referrers.
 
 ## 8. Integration boundaries
 
@@ -369,9 +439,11 @@ in the Google console to the Drive API and to the site's referrers.
   app (SPA platform, personal and work accounts). Redirect URIs: the Pages
   `auth.html` and `http://localhost:<port>/auth.html` for development.
 - **Site build** (`scripts/build-web.mjs`, `scripts/build-site.mjs`,
-  `scripts/smoke-site.mjs`): new entries `auth.html`, `render.html`,
-  `privacy.html`; config injection; the smoke test checks they are served.
+  `scripts/smoke-site.mjs`): entries `auth.html`, `render.html`,
+  `privacy.html`, `app.css`, `third-party-licenses.txt`; config and CSP
+  injection; the smoke test checks they are served.
 - **Docs**: `docs/using-boh.md` (bins, links, renderers), `docs/providers.md`
-  (registering the provider apps, scopes, limits), `docs/privacy.md`.
+  (registering the provider apps, scopes, limits), `docs/privacy.md`,
+  `docs/manual-testing.md`.
 - Nothing depends on boh; the config file format and the link format are its
   external contracts and are versioned.

@@ -1,0 +1,82 @@
+<!doctype html>
+<!-- MIT License © 2026 Binary Dice Games -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="referrer" content="no-referrer" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'"
+    />
+    <title>boh privacy policy</title>
+    <style>
+      body {
+        font:
+          16px/1.5 system-ui,
+          sans-serif;
+        margin: 0 auto;
+        max-width: 42em;
+        padding: 16px;
+        color-scheme: light dark;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Privacy policy</h1>
+    <p>
+      boh is a static web page published by Binary Dice Games. It has no server of its own: it
+      runs entirely in your browser and talks directly to your Google Drive.
+    </p>
+    <h2>What boh accesses</h2>
+    <ul>
+      <li>
+        Your Google account name and email address, to show which account is connected.
+      </li>
+      <li>
+        The folders you register as bins and the files in them, to list, upload, show and delete
+        pastes when you ask it to. In Google Drive, boh only sees files it created and files and
+        folders you choose for it in Google's picker.
+      </li>
+      <li>
+        One settings file (<code>boh-config.json</code>) in Google Drive's private app-data
+        area, holding your list of bins.
+      </li>
+    </ul>
+    <h2>What boh stores and sends</h2>
+    <ul>
+      <li>
+        Nothing on any server of Binary Dice Games: there is none. Your data goes only between
+        your browser and Google.
+      </li>
+      <li>
+        In your browser: sign-in tokens (in local storage only when you choose to stay signed
+        in), a copy of your settings, the pastes you opened or created recently, and display
+        preferences. Disconnecting an account removes what boh stored for it.
+      </li>
+      <li>
+        No analytics, no advertising, no tracking. Pictures linked from inside a paste are only
+        loaded when you ask for them.
+      </li>
+    </ul>
+    <h2>Who can see your pastes</h2>
+    <p>
+      Whoever Google Drive lets see the folder or file. boh never widens the sharing of a
+      folder; it makes per-paste links that match the visibility you chose for the bin.
+    </p>
+    <h2>Use of Google user data</h2>
+    <p>
+      boh's use of information received from Google APIs adheres to the Google API Services User
+      Data Policy, including the Limited Use requirements. Data is used only to provide the
+      features above and is never transferred to others.
+    </p>
+    <h2>Contact</h2>
+    <p>
+      Open an issue at
+      <a href="https://github.com/binary-dice-games/boh/issues" rel="noopener noreferrer"
+        >github.com/binary-dice-games/boh</a
+      >.
+    </p>
+    <p><a href="{{base}}">Back to boh</a></p>
+  </body>
+</html>

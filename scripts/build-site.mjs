@@ -3,7 +3,8 @@
 //
 //   node scripts/build-site.mjs [outDir] [--base /boh/]
 //
-// The site holds the page at the root and a 404 page that links back to it.
+// The site holds the app at the root, the render frame, the sign-in redirect page, the privacy
+// policy and a 404 page that links back to the app.
 import { readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -25,15 +26,18 @@ export function normalizeBase(base) {
 
 /**
  * @param {string} out directory to build into (emptied first)
- * @param {{base?: string}} [options] `base` is the path the site is served under
+ * @param {{base?: string, config?: import('./config.mjs').ConfigOverrides}} [options] `base` is
+ *   the path the site is served under; `config` overrides the build configuration
  * @returns {Promise<void>}
  */
-export async function buildSite(out, { base = '/' } = {}) {
+export async function buildSite(out, { base = '/', config } = {}) {
   const basePath = normalizeBase(base);
   rmSync(out, { recursive: true, force: true });
-  await buildWeb(out);
+  await buildWeb(out, { config });
   const page = (name) => readFileSync(join(siteSrc, name), 'utf8').replaceAll('{{base}}', basePath);
-  writeFileSync(join(out, '404.html'), page('404.html'));
+  for (const name of ['404.html', 'privacy.html']) {
+    writeFileSync(join(out, name), page(name));
+  }
   writeFileSync(join(out, '.nojekyll'), '');
 }
 

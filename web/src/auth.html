@@ -1,0 +1,25 @@
+<!doctype html>
+<!-- MIT License © 2026 Binary Dice Games -->
+<!-- The OAuth redirect target: hands the answer to the boh page that asked, then closes. -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="referrer" content="no-referrer" />
+    <meta http-equiv="Content-Security-Policy" content="{{csp}}" />
+    <title>boh sign-in</title>
+    <style>
+      body {
+        font:
+          16px/1.5 system-ui,
+          sans-serif;
+        margin: 2em;
+        color-scheme: light dark;
+      }
+    </style>
+  </head>
+  <body>
+    <p id="status">Finishing sign-in. You can close this window.</p>
+    <script src="auth.js"></script>
+  </body>
+</html>

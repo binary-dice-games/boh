@@ -3,7 +3,7 @@
 //
 //   node scripts/smoke-site.mjs <site url, ending with />
 //
-// Fetches the page and its script and a missing page (which must be the 404 page). Exits 1 with
+// Fetches the pages and their scripts, the privacy policy and a missing page (which must be the 404 page). Exits 1 with
 // the reasons if anything is wrong. The check is meant to run right after a deploy.
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
@@ -38,6 +38,12 @@ export async function smokeSite(base, get = (url) => fetch(url, { redirect: 'man
   };
   await check('', { contains: ['<title>boh</title>', 'main.js'], label: 'page' });
   await check('main.js', { label: 'page script' });
+  await check('app.css', { label: 'stylesheet' });
+  await check('render.html', { contains: 'render.js', label: 'render frame' });
+  await check('render.js', { label: 'render frame script' });
+  await check('auth.html', { contains: 'auth.js', label: 'sign-in page' });
+  await check('auth.js', { label: 'sign-in page script' });
+  await check('privacy.html', { contains: 'Privacy', label: 'privacy policy' });
   await check('no-such-page-for-smoke-test', {
     status: 404,
     contains: 'This page does not exist',

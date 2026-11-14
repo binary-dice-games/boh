@@ -1,0 +1,6 @@
+{
+  "providers": ["gd"],
+  "google": { "clientId": "", "apiKey": "", "appId": "" },
+  "dropbox": { "appKey": "" },
+  "microsoft": { "clientId": "" }
+}

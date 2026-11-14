@@ -43,6 +43,25 @@ describe('the site in Chrome', () => {
     await page.close();
   });
 
+  it('offers no Dropbox or OneDrive, and refuses their links', async () => {
+    const page = await browser.newPage();
+    await page.goto(url);
+    expect(await page.locator('button.connect').count()).toBe(0); // no client ids in this build
+    for (const [code, label] of [
+      ['db', 'Dropbox'],
+      ['od', 'OneDrive'],
+    ]) {
+      await page.goto(`${url}#v1/${code}/aWQ6eA`);
+      await page
+        .locator('#viewer-message', {
+          hasText: `in ${label}, which this boh site does not support`,
+        })
+        .waitFor();
+      expect(await page.locator('#viewer-sign-in').count()).toBe(0);
+    }
+    await page.close();
+  });
+
   it('answers an unknown path with the 404 page, which links home', async () => {
     const page = await browser.newPage();
     const res = await page.goto(`${url}no/such/page`);
