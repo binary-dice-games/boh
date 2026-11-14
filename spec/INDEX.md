@@ -5,4 +5,4 @@ the status and topics as it progresses. See "spec/" in `CLAUDE.md`.
 
 | Project | Status | Summary | Topics |
 |---|---|---|---|
-| [01_core_features](01_core_features/) | Implemented against fakes; provider apps and real-account checks (steps 1, 2) open | Product definition and architecture: bins in the user's Google Drive, Dropbox and OneDrive, config in each account's app data, boh links, sandboxed renderers. | architecture, providers, OAuth, config, links, renderers, security, testing |
+| [01_core_features](01_core_features/) | Implemented against fakes, site offers Google Drive only; Google app and real-account checks (steps 1, 2) open | Product definition and architecture: bins in the user's Google Drive (Dropbox and OneDrive built, switched off), config in each account's app data, boh links, sandboxed renderers. | architecture, providers, OAuth, config, links, renderers, security, testing |

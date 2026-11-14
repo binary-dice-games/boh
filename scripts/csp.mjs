@@ -1,7 +1,7 @@
 // MIT License © 2026 Binary Dice Games
 // The Content-Security-Policy of each page of the site, derived from the build configuration.
 //
-// The app may talk to the providers' APIs only; the render frame may talk to nobody (remote
+// The app may talk to the APIs of the enabled providers only; the render frame may talk to nobody (remote
 // images in a paste are allowed by this outer policy, and blocked or allowed per paste by the
 // frame's own policy and sanitizer); the sign-in redirect page only runs its own script.
 
@@ -14,21 +14,29 @@ const unique = (list) => [...new Set(list)];
  * @returns {string}
  */
 export function appCsp(config) {
+  const on = (id) => config.providers.includes(id);
   const connect = unique([
-    origin(config.google.apiBase),
-    origin(config.google.revokeUrl),
-    origin(config.dropbox.apiBase),
-    origin(config.dropbox.contentBase),
-    origin(config.dropbox.rawBase),
-    origin(config.microsoft.authority),
-    origin(config.microsoft.graphBase),
-    ...config.microsoft.downloadHosts,
+    ...(on('gd') ? [origin(config.google.apiBase), origin(config.google.revokeUrl)] : []),
+    ...(on('db')
+      ? [
+          origin(config.dropbox.apiBase),
+          origin(config.dropbox.contentBase),
+          origin(config.dropbox.rawBase),
+        ]
+      : []),
+    ...(on('od')
+      ? [
+          origin(config.microsoft.authority),
+          origin(config.microsoft.graphBase),
+          ...config.microsoft.downloadHosts,
+        ]
+      : []),
   ]);
-  const scripts = config.google.testPicker ? [] : [origin(config.google.pickerScript)];
+  const scripts = on('gd') && !config.google.testPicker ? [origin(config.google.pickerScript)] : [];
   return [
     "default-src 'none'",
     ['script-src', "'self'", ...scripts].join(' '),
-    ['connect-src', ...connect].join(' '),
+    connect.length ? ['connect-src', ...connect].join(' ') : "connect-src 'none'",
     "frame-src 'self' blob: https://docs.google.com",
     "img-src 'self' blob: data:",
     'media-src blob:',

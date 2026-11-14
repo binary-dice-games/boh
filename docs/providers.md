@@ -6,6 +6,23 @@ one app per service and puts its public id in `web/boh.config.json` (or in the
 repository variables, see [publishing.md](publishing.md)). A service without an
 id is not offered by the page.
 
+## Enabled providers
+
+The published site offers **Google Drive only**: it is the one service whose
+app costs nothing at any number of users. `providers` in `web/boh.config.json`
+lists the services a build offers (default `["gd"]`). Dropbox (`db`) and
+OneDrive (`od`) stay in the code and in the tests, but a build without them
+leaves their modules out of `main.js`, gives them no place in the page's
+Content-Security-Policy and shows no button for them; links to their pastes
+say the site does not support them. To switch one on, add it to `providers`
+and give it an id.
+
+| Service | Registering | Costs to expect |
+|---|---|---|
+| Google Drive | Free | None for `drive.file` (no security assessment); maybe a custom domain for Google's domain verification |
+| Dropbox | Free | None found, but production approval is needed within two weeks of the 50th linked user, and reviewers may question the Full Dropbox permission |
+| OneDrive | Free | Needs a Microsoft Entra tenant; opening a free Azure account usually asks for a card |
+
 Redirect URI for every app: the deployed `auth.html`, e.g.
 `https://binary-dice-games.github.io/boh/auth.html`, plus
 `http://localhost:<port>/auth.html` for development.
@@ -41,7 +58,9 @@ refresh token), so a Google sign-in lasts about an hour.
    `files.content.read`, `files.content.write`, `sharing.read`,
    `sharing.write`.
 3. Settings: add the redirect URIs; allow public clients (PKCE); the **App
-   key** is `dropbox.appKey`. More than 500 users needs production approval.
+   key** is `dropbox.appKey`. A development app links up to 500 users, but
+   after the 50th it has two weeks to get production approval or it is
+   frozen.
 
 boh stores its settings in `/Apps/boh/boh-config.json`.
 

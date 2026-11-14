@@ -2,7 +2,8 @@
 
 The automated tests use fakes of the three services. These checks need real
 accounts and the real provider apps ([providers.md](providers.md)); record the
-date, browser and result when you run them. Spec step 1 of
+date, browser and result when you run them. Checks 5 to 9 are needed only
+before Dropbox or OneDrive is switched on. Spec step 1 of
 `spec/01_core_features/PLAN.md` starts here.
 
 | # | Check | Result |

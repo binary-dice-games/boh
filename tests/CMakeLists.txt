@@ -9,6 +9,7 @@ boh_add_test(local_state tests/unit/local-state.test.ts)
 boh_add_test(google_drive tests/unit/google-drive.test.ts)
 boh_add_test(dropbox tests/unit/dropbox.test.ts)
 boh_add_test(onedrive tests/unit/onedrive.test.ts)
+boh_add_test(disabled_provider tests/unit/disabled-provider.test.ts)
 
 # Browser tests need Chrome (BOH_CHROME), see docs/building.md.
 boh_add_test(site tests/e2e/site.test.ts PROJECT e2e)

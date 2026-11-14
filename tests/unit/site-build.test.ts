@@ -64,9 +64,17 @@ describe('the Pages site', () => {
     expect(text).toContain('BSD 3-Clause');
   });
 
+  it('bundles Google Drive only, by default', () => {
+    const main = readFileSync(join(out, 'main.js'), 'utf8');
+    expect(main).toContain('appDataFolder');
+    for (const marker of ['files/list_folder', 'token_access_type', 'sharedWithMe', 'createLink']) {
+      expect(main, marker).not.toContain(marker);
+    }
+  });
+
   it('puts the build configuration in the app and nothing secret', () => {
     const main = readFileSync(join(out, 'main.js'), 'utf8');
-    expect(main).toContain('https://graph.microsoft.com/v1.0');
+    expect(main).toContain('https://www.googleapis.com');
     expect(main).not.toMatch(/client_secret/);
   });
 

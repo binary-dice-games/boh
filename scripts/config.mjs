@@ -10,8 +10,13 @@ import { fileURLToPath } from 'node:url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
+/** Every provider boh has code for. */
+export const PROVIDER_IDS = ['gd', 'db', 'od'];
+
 /** The providers' real endpoints. */
 export const DEFAULT_CONFIG = {
+  /** The providers the page offers; the others are left out of the bundle. */
+  providers: ['gd'],
   google: {
     clientId: '',
     apiKey: '',
@@ -66,6 +71,7 @@ function merge(base, extra) {
  * @param {Record<string, string | undefined>} [env] the environment (default `process.env`)
  * @param {string} [file] the committed configuration file
  * @returns {typeof DEFAULT_CONFIG}
+ * @throws {Error} if `providers` names an unknown provider
  */
 export function resolveConfig(
   overrides = {},
@@ -78,5 +84,10 @@ export function resolveConfig(
       config = merge(config, { [provider]: { [key]: env[name] } });
     }
   }
-  return merge(config, overrides);
+  config = merge(config, overrides);
+  const unknown = config.providers.filter((id) => !PROVIDER_IDS.includes(id));
+  if (unknown.length) {
+    throw new Error(`unknown providers in the build configuration: ${unknown.join(', ')}`);
+  }
+  return config;
 }

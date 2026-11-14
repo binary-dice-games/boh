@@ -77,6 +77,10 @@ export function viewerView(
     if (closed) {
       return;
     }
+    if (!provider.configured) {
+      message(`This paste is in ${label}, which this boh site does not support.`);
+      return;
+    }
     head.replaceChildren(h('h2', { text: link.name ?? 'Paste' }));
     body.replaceChildren(h('p', { class: 'muted', text: `Opening the paste from ${label}…` }));
     let meta: PasteMeta;
@@ -89,14 +93,10 @@ export function viewerView(
       const reason = reasonOf(e);
       const account = provider.account();
       if (reason === 'needs_sign_in') {
-        if (!provider.configured) {
-          message(`This paste is in ${label}, which this build of boh cannot open.`);
-        } else {
-          message(
-            `This paste is in ${label}. Sign in to open it: boh reads it with your own ${label} account.`,
-            signInButton(),
-          );
-        }
+        message(
+          `This paste is in ${label}. Sign in to open it: boh reads it with your own ${label} account.`,
+          signInButton(),
+        );
       } else if (reason === 'needs_grant' && !granted && provider.grantAccess) {
         message(
           `${label} asks you to confirm that boh may open this file. Choose it in the window that opens.`,

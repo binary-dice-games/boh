@@ -10,8 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Project scaffolding: an empty page, the GitHub Pages site build and deploy.
-- Google Drive, Dropbox and OneDrive accounts: sign-in in a popup, optionally
-  kept on the browser.
+- Google Drive accounts: sign-in in a popup, optionally kept on the browser.
+  Dropbox and OneDrive support is built but switched off on the site.
 - Bins: register, create, edit and remove cloud folders with a visibility
   (public, members, private); the folder's real sharing is shown with a warning
   on a mismatch. The list of bins is stored in each account's app area.

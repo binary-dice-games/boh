@@ -6,6 +6,8 @@
 
 /** The configuration of one build. Every value is public. */
 export interface BohConfig {
+  /** The providers this build offers (`gd`, `db`, `od`). */
+  providers: string[];
   google: {
     clientId: string;
     apiKey: string;

@@ -2,10 +2,10 @@
 
 ## Connect and add bins
 
-1. Press **Connect Google Drive**, **Connect Dropbox** or **Connect OneDrive**
-   and sign in in the window that opens. Several services can be connected at
-   once. **Stay signed in on this browser** keeps the sign-in after the tab is
-   closed.
+1. Press **Connect Google Drive** and sign in in the window that opens.
+   **Stay signed in on this browser** keeps the sign-in after the tab is
+   closed. (Builds that switch on Dropbox or OneDrive show a button for each;
+   several services can be connected at once.)
 2. Press **Add bin**. A bin is a folder in your cloud storage:
    - Google Drive: **Choose a folder in Google Drive** opens Google's picker
      (boh only sees what you pick there and what it created itself).
@@ -39,7 +39,7 @@ service's own app.
 
 A boh link looks like `https://…/boh/#v1/gd/…`. Opening it:
 
-- public pastes on Google Drive and Dropbox open without signing in;
+- public pastes open without signing in;
 - otherwise boh asks you to sign in to that service, with your own account;
 - Google Drive may ask you to confirm, in Google's picker, that boh may open
   the file;

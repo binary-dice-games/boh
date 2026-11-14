@@ -41,7 +41,14 @@ export async function startHarness(fakes: {
   dropbox?: FakeDropbox;
   graph?: FakeGraph;
 }): Promise<Harness> {
-  const config: ConfigOverrides = {};
+  // Switch on exactly the providers whose fakes run (the site ships Google Drive only).
+  const config: ConfigOverrides = {
+    providers: [
+      ...(fakes.drive ? (['gd'] as const) : []),
+      ...(fakes.dropbox ? (['db'] as const) : []),
+      ...(fakes.graph ? (['od'] as const) : []),
+    ],
+  };
   if (fakes.drive) {
     const d = fakes.drive.server.url;
     config.google = {

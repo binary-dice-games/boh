@@ -53,11 +53,11 @@ npm run test:e2e       # browser tests (project "e2e"), needs Chrome
 
 ## Build configuration
 
-The page needs the public ids of the provider apps (see
-[providers.md](providers.md)). They are committed in `web/boh.config.json`; the
-`BOH_*` variables above override them for a fork or a development build. A
-provider without an id is left out of the page ("not configured"). Nothing in
-the configuration is secret: it ships in `main.js`.
+`web/boh.config.json` lists the providers the page offers (`providers`, default
+`["gd"]`, see [providers.md](providers.md)) and the public ids of their apps; the
+`BOH_*` variables above override the ids for a fork or a development build. A
+provider that is off is not bundled; one without an id is shown as not
+configured. Nothing in the configuration is secret: it ships in `main.js`.
 
 `scripts/config.mjs` merges the file, the environment and the overrides the
 tests pass (which point every endpoint at a loopback fake), and
@@ -71,7 +71,7 @@ as a redirect URI of each app, build with `npm run build:site`, and serve
 
 | Path | Contents |
 |------|----------|
-| `web/boh.config.json` | Public client ids of the provider apps |
+| `web/boh.config.json` | Enabled providers and the public client ids of their apps |
 | `web/src/` | The app: `index.html` + `main.ts`, `app.css`, the core modules (links, formats, bins, HTTP, OAuth) |
 | `web/src/providers/` | The provider contract and Google Drive, Dropbox and OneDrive |
 | `web/src/render/` | The render frame (`render.html` + `frame.ts`, bundled into `render.js`) |

@@ -21,7 +21,8 @@ the way GitHub Pages serves a project site (under `/boh/`, unknown paths get
 The providers are tested against loopback fakes of the endpoints boh calls
 (`tests/support/fake-drive.ts`, `fake-dropbox.ts`, `fake-graph.ts`): sign-in
 (including PKCE and refresh tokens), files, sharing and links. The browser tests
-build the site with every endpoint pointing at the fakes and with a stand-in for
+build the site with every endpoint pointing at the fakes, switching on the
+providers whose fakes run (Dropbox and OneDrive are off in the real site), and with a stand-in for
 Google's Picker that asks through `window.prompt`; the real sign-in windows and
 picker are checked by hand ([manual-testing.md](manual-testing.md)).
 
@@ -40,7 +41,8 @@ picker are checked by hand ([manual-testing.md](manual-testing.md)).
 | `google_drive` | `tests/unit/google-drive.test.ts` | Drive provider against the fake: sign-in, config, bins, links, grant, limits |
 | `dropbox` | `tests/unit/dropbox.test.ts` | Dropbox provider: PKCE and refresh, config, folders, shared links, fallbacks |
 | `onedrive` | `tests/unit/onedrive.test.ts` | OneDrive provider: PKCE and rotation, app folder, shared folders, links |
-| `site` | `tests/e2e/site.test.ts` | The site in Chrome: the page loads without errors, an unknown path gives the 404 page, which links home |
+| `disabled_provider` | `tests/unit/disabled-provider.test.ts` | The stand-in for a provider the build leaves out |
+| `site` | `tests/e2e/site.test.ts` | The site in Chrome: the page loads without errors, no Dropbox or OneDrive and their links refused, an unknown path gives the 404 page, which links home |
 | `render` | `tests/e2e/render.test.ts` | Every renderer; hostile HTML/SVG runs nothing, the frame's origin is opaque, remote content waits |
 | `app_drive` | `tests/e2e/app-drive.test.ts` | The whole cycle with Drive: connect, bins, upload, public and members links, grant, delete |
 | `app_dropbox` | `tests/e2e/app-dropbox.test.ts` | Dropbox: folder browser, public and members links, reload, delete |

@@ -63,7 +63,13 @@ export async function buildWeb(out, { config: overrides } = {}) {
     legalComments: 'none',
     logLevel: 'warning',
     loader: { '.css': 'text' },
-    define: { __BOH_CONFIG__: JSON.stringify(config) },
+    // One constant per provider, so a provider that is off is dropped from the bundle.
+    define: {
+      __BOH_CONFIG__: JSON.stringify(config),
+      __BOH_GD__: JSON.stringify(config.providers.includes('gd')),
+      __BOH_DB__: JSON.stringify(config.providers.includes('db')),
+      __BOH_OD__: JSON.stringify(config.providers.includes('od')),
+    },
   });
   const version = buildVersion();
   for (const page of PAGES) {

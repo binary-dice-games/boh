@@ -14,11 +14,17 @@ describe('build configuration', () => {
     expect(config.dropbox.appKey).toBe('from-override');
     expect(config.microsoft.graphBase).toBe('https://graph.microsoft.com/v1.0');
   });
+
+  it('offers Google Drive only by default and refuses unknown providers', () => {
+    expect(resolveConfig({}, {}).providers).toEqual(['gd']);
+    expect(resolveConfig({ providers: ['gd', 'od'] }, {}).providers).toEqual(['gd', 'od']);
+    expect(() => resolveConfig({ providers: ['xx' as 'gd'] }, {})).toThrow('unknown providers');
+  });
 });
 
 describe('page policies', () => {
   it('lets the app reach exactly the providers it is configured for', () => {
-    const csp = appCsp(resolveConfig({}, {}));
+    const csp = appCsp(resolveConfig({ providers: ['gd', 'db', 'od'] }, {}));
     const connect = csp
       .split('; ')
       .find((d) => d.startsWith('connect-src'))!
@@ -39,6 +45,18 @@ describe('page policies', () => {
     expect(csp).toContain("script-src 'self' https://apis.google.com");
     expect(csp).toContain("default-src 'none'");
     expect(csp).not.toContain('unsafe-eval');
+  });
+
+  it('leaves out the providers that are off', () => {
+    const drive = appCsp(resolveConfig({}, {}));
+    expect(drive).toContain(
+      'connect-src https://www.googleapis.com https://oauth2.googleapis.com;',
+    );
+    expect(drive).not.toMatch(/dropbox|microsoft|1drv/);
+    const dropbox = appCsp(resolveConfig({ providers: ['db'] }, {}));
+    expect(dropbox).not.toContain('googleapis');
+    expect(dropbox).toContain("script-src 'self';");
+    expect(appCsp(resolveConfig({ providers: [] }, {}))).toContain("connect-src 'none'");
   });
 
   it('follows endpoints moved to fakes and drops the Picker script for the test picker', () => {

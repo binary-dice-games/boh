@@ -40,6 +40,11 @@ across bins; boh changing a folder's sharing (the user does it in the provider,
 boh shows it and links there); several accounts of the same provider at once;
 running scripts of HTML pastes; a server of our own, even a token proxy.
 
+**The published site offers Google Drive only** (plan step 11): it is the one
+service free at any number of users. Dropbox and OneDrive are implemented and
+tested but switched off by the build configuration (section 7.4); everything
+below describes all three, as a build that switches them on behaves.
+
 Owned files: `web/boh.config.json`, `web/src/` (the app, `providers/`,
 `render/`, `ui/`), `scripts/config.mjs` and `scripts/csp.mjs` (build
 configuration and page policies), `scripts/build-web.mjs`,
@@ -347,6 +352,7 @@ by themselves (`target=_blank`, popups escape the sandbox), so there is no
 | Render frame from `render.html` with `sandbox="allow-scripts"`, no `allow-same-origin`; the paste in a nested script-less `srcdoc` frame with its own `<meta>` policy | Rendering in the app's DOM; one `srcdoc` frame | The frame has an opaque origin, so even a sanitizer bypass cannot read tokens or config; it needs scripts for its own renderer, so it is a real page with its own CSP rather than a `srcdoc` that would inherit the app's. The nested document runs nothing and switches remote loading per paste, which a page-wide CSP cannot |
 | Drive settings conflict check reads the version, then writes | Conditional write | Drive v3 has no conditional update; the window is milliseconds and a lost update is still caught on the next write by the other device |
 | Bundled libraries' licenses in `third-party-licenses.txt` | Keeping their legal comments in `render.js` | One readable file, linked from the footer |
+| Google Drive only on the site; Dropbox and OneDrive switched off at build time, not deleted | Shipping all three; deleting the two | Drive is the only service free at scale (Dropbox needs production review past 50 users, Microsoft an Entra tenant); the code stays tested so switching one on is a configuration change |
 | HTML pastes sanitized and script-free | Running paste scripts in a sandbox | A pastebin shows content; running it invites phishing pages on our origin's name. Can be revisited behind an explicit button |
 | Remote content blocked until asked | Always load | Remote images in a paste are a read receipt to their host |
 | Visibility label stored, sharing read live | Storing sharing state | The provider is the authority (goal 2); sharing changes outside boh |
@@ -402,6 +408,15 @@ that a hostile HTML, Markdown or SVG paste does not run script, that the render
 frame's origin is opaque, and that remote URLs load only when asked.
 
 ### 7.4 Build configuration
+
+`providers` lists the providers a build offers (default `["gd"]`; unknown codes
+fail the build). esbuild gets one boolean constant per provider (`__BOH_GD__`,
+`__BOH_DB__`, `__BOH_OD__`), so `main.ts` replaces a provider that is off with
+`createDisabledProvider` (`web/src/providers/disabled.ts`: not configured,
+every call `not_configured`) and its module is tree-shaken out of `main.js`;
+`appCsp` leaves its hosts out (`connect-src 'none'` when none is on). The
+viewer answers a link to a provider that is off with "this boh site does not
+support it", without a sign-in button.
 
 Client ids (Google, Dropbox, Microsoft), the Google API key and the Google
 Cloud project number (the Picker's app id) are public and committed in

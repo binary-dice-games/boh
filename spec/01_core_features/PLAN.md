@@ -113,6 +113,21 @@ accounts per provider, personal and work); README overview and layout,
 **Tests:** `tests/unit/site-build.test.ts`, `tests/e2e/site.test.ts`.
 **Result:** done, plus `third-party-licenses.txt`; manual checks open (`docs/manual-testing.md`).
 
+## 11. Google Drive only on the site
+
+**Goal:** the published site offers Google Drive only (the one service free at
+any number of users); Dropbox and OneDrive stay in the code, tested, ready to
+switch on.
+**Deliverables:** `providers` list in the build configuration (default `["gd"]`);
+providers left out are not bundled into `main.js`, get no CSP entry, and their
+links say this site cannot open them (`providers/disabled.ts`); docs, privacy
+policy and changelog say Google Drive.
+**Tests:** `tests/unit/csp.test.ts` (policy per enabled provider),
+`tests/unit/site-build.test.ts` (default bundle has no Dropbox or Graph code),
+`tests/e2e/site.test.ts` (no Dropbox or OneDrive button; their links refused);
+the Dropbox and OneDrive app tests build with them switched on.
+**Result:** done; `tests/unit/disabled-provider.test.ts` added.
+
 ## Completion Criteria
 
 `cmake --build build --target check` and `ctest` pass on Linux, macOS and
