@@ -16,10 +16,11 @@ Before the first deploy, set **Settings > Pages > Source** to **GitHub
 Actions** in the repository. Pages for a private repository needs a paid
 GitHub plan; for a public one it is free.
 
-The provider apps' ids come from `web/boh.config.json` or from the repository
-variables `BOH_GOOGLE_CLIENT_ID`, `BOH_GOOGLE_API_KEY`, `BOH_GOOGLE_APP_ID`,
-`BOH_DROPBOX_APP_KEY` and `BOH_MS_CLIENT_ID` (Settings > Secrets and variables >
-Actions > Variables). Each app must list the deployed `auth.html` as a redirect
+Set the provider apps' ids as the repository variables `BOH_GOOGLE_CLIENT_ID`,
+`BOH_GOOGLE_API_KEY` and `BOH_GOOGLE_APP_ID` (Settings > Secrets and variables >
+Actions > Variables; `BOH_DROPBOX_APP_KEY` and `BOH_MS_CLIENT_ID` only if those
+services are switched on). Leave the fields of `web/boh.config.json` empty, so
+forks do not inherit them. Each app must list the deployed `auth.html` as a redirect
 URI; see [providers.md](providers.md).
 
 ## Check by hand

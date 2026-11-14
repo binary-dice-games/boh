@@ -27,6 +27,12 @@ export const TEXT_MAX_BYTES = 5 * MIB;
 export const HIGHLIGHT_MAX_BYTES = 1 * MIB;
 /** Media renderers fetch at most this; above, only Download. */
 export const MEDIA_MAX_BYTES = 200 * MIB;
+/**
+ * A paste read without a sign-in goes through the site's own API key, so it uses the site's
+ * quota; above this boh sends the viewer to the provider instead (Google's terms also forbid
+ * using Drive to distribute large media widely).
+ */
+export const ANONYMOUS_MAX_BYTES = 25 * MIB;
 
 /** Whether `value` names a renderer. */
 export function isRenderer(value: unknown): value is Renderer {
@@ -222,9 +228,13 @@ export function languageOf(name: string): string {
   return CODE[extensionOf(name)] ?? 'plaintext';
 }
 
-/** The largest paste `renderer` shows. */
-export function maxBytesFor(renderer: Renderer): number {
-  return TEXT_RENDERERS.includes(renderer) ? TEXT_MAX_BYTES : MEDIA_MAX_BYTES;
+/**
+ * The largest paste `renderer` shows; lower when the paste is read without a sign-in
+ * (`ANONYMOUS_MAX_BYTES`).
+ */
+export function maxBytesFor(renderer: Renderer, access?: 'anonymous' | 'token'): number {
+  const limit = TEXT_RENDERERS.includes(renderer) ? TEXT_MAX_BYTES : MEDIA_MAX_BYTES;
+  return access === 'anonymous' ? Math.min(limit, ANONYMOUS_MAX_BYTES) : limit;
 }
 
 /** The formats offered for a new text paste: extension and label. */

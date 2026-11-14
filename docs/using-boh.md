@@ -45,10 +45,20 @@ A boh link looks like `https://…/boh/#v1/gd/…`. Opening it:
   the file;
 - if your account has no access, boh says so: ask whoever sent the link.
 
+Public pastes larger than 25 MiB, and public pastes while the site is busy,
+open in Google Drive's own viewer instead (see
+[providers.md](providers.md#google-drive)).
+
 The viewer shows text with line numbers and highlighting, Markdown, HTML,
 images, audio, video and PDF. **Show as** switches between text views (e.g.
 Markdown source). Pictures and styles linked from inside a paste load only
 after **Load remote content**. **Download** saves the file.
+
+## Fair use
+
+Pastes live in your Google Drive under Google's terms: boh is for sharing
+pastes with people, not for hosting files for the whole web or distributing
+video widely.
 
 ## Bins and recent pastes
 

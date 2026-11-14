@@ -241,7 +241,10 @@ the extension), the file extension, the MIME type the provider reports, then
 content sniffing (valid UTF-8 without NUL in the first 64 KiB means text).
 
 Size limits: text renderers up to 5 MiB, highlighting off above 1 MiB; media
-up to 200 MiB fetched to a blob; above that, *Download* only. Upload limit is
+up to 200 MiB fetched to a blob; above that, *Download* only. A paste read
+anonymously (with the site's API key, so on the site's quota) is read only up
+to 25 MiB (`ANONYMOUS_MAX_BYTES`); above that, and while that read is
+rate-limited, the viewer offers *Open in <provider>* and no *Download*. Upload limit is
 the provider's simple-upload limit unless the plan adds resumable upload.
 
 ### 4.6 Renderers
@@ -352,6 +355,8 @@ by themselves (`target=_blank`, popups escape the sandbox), so there is no
 | Render frame from `render.html` with `sandbox="allow-scripts"`, no `allow-same-origin`; the paste in a nested script-less `srcdoc` frame with its own `<meta>` policy | Rendering in the app's DOM; one `srcdoc` frame | The frame has an opaque origin, so even a sanitizer bypass cannot read tokens or config; it needs scripts for its own renderer, so it is a real page with its own CSP rather than a `srcdoc` that would inherit the app's. The nested document runs nothing and switches remote loading per paste, which a page-wide CSP cannot |
 | Drive settings conflict check reads the version, then writes | Conditional write | Drive v3 has no conditional update; the window is milliseconds and a lost update is still caught on the next write by the other device |
 | Bundled libraries' licenses in `third-party-licenses.txt` | Keeping their legal comments in `render.js` | One readable file, linked from the footer |
+| Anonymous reads capped at 25 MiB, larger public pastes sent to the provider's viewer | Streaming any public paste through the site's key | The project's quota is shared by every public paste; Drive's terms forbid using it as a CDN or for broad video distribution |
+| Client ids as repository variables, the config file's fields empty | Committing the ids | They are public anyway, but a fork should not inherit ids that are tied to this site |
 | Google Drive only on the site; Dropbox and OneDrive switched off at build time, not deleted | Shipping all three; deleting the two | Drive is the only service free at scale (Dropbox needs production review past 50 users, Microsoft an Entra tenant); the code stays tested so switching one on is a configuration change |
 | HTML pastes sanitized and script-free | Running paste scripts in a sandbox | A pastebin shows content; running it invites phishing pages on our origin's name. Can be revisited behind an explicit button |
 | Remote content blocked until asked | Always load | Remote images in a paste are a read receipt to their host |
@@ -419,10 +424,12 @@ viewer answers a link to a provider that is off with "this boh site does not
 support it", without a sign-in button.
 
 Client ids (Google, Dropbox, Microsoft), the Google API key and the Google
-Cloud project number (the Picker's app id) are public and committed in
-`web/boh.config.json`; `BOH_GOOGLE_CLIENT_ID`, `BOH_GOOGLE_API_KEY`,
-`BOH_GOOGLE_APP_ID`, `BOH_DROPBOX_APP_KEY` and `BOH_MS_CLIENT_ID` override them
-at build time (the Pages workflow passes repository variables). A provider
+Cloud project number (the Picker's app id) are public (they ship in
+`main.js`) but kept out of the repository: `web/boh.config.json` has empty
+fields, and `BOH_GOOGLE_CLIENT_ID`, `BOH_GOOGLE_API_KEY`, `BOH_GOOGLE_APP_ID`,
+`BOH_DROPBOX_APP_KEY` and `BOH_MS_CLIENT_ID` set them at build time (the Pages
+workflow passes repository variables). Anyone can run their own copy with their
+own project ("bring your own keys", `docs/providers.md`). A provider
 without an id is shown as not configured. `scripts/config.mjs` resolves the
 configuration, which esbuild injects as `__BOH_CONFIG__`; the tests override
 every endpoint with loopback fakes and swap the Picker for a prompt-based

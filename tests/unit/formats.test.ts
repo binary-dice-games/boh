@@ -68,6 +68,9 @@ describe('format detection', () => {
     expect(languageOf('x.ts')).toBe('typescript');
     expect(languageOf('x.unknown')).toBe('plaintext');
     expect(maxBytesFor('text')).toBeLessThan(maxBytesFor('video'));
+    expect(maxBytesFor('video', 'anonymous')).toBe(25 * 1024 * 1024);
+    expect(maxBytesFor('video', 'token')).toBe(200 * 1024 * 1024);
+    expect(maxBytesFor('text', 'anonymous')).toBe(5 * 1024 * 1024);
   });
 });
 

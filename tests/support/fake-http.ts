@@ -45,6 +45,7 @@ export class FakeServer {
     count: number;
     match: RegExp;
     headers?: Record<string, string>;
+    withQuery?: boolean;
   }[] = [];
   private server: Server | undefined;
   /** `http://127.0.0.1:<port>`, once started. */
@@ -58,9 +59,18 @@ export class FakeServer {
     return this;
   }
 
-  /** The next `count` requests whose path matches `match` fail with `status`. */
-  failNext(status: number, count = 1, match = /./, headers?: Record<string, string>): void {
-    this.failures.push({ status, count, match, headers });
+  /**
+   * The next `count` requests whose path (with `withQuery`, path and query) matches `match` fail
+   * with `status`.
+   */
+  failNext(
+    status: number,
+    count = 1,
+    match = /./,
+    headers?: Record<string, string>,
+    withQuery = false,
+  ): void {
+    this.failures.push({ status, count, match, headers, withQuery });
   }
 
   /** Starts listening on a free loopback port. */
@@ -127,7 +137,10 @@ export class FakeServer {
       };
     }
     this.log.push({ method, path: url.pathname });
-    const failure = this.failures.find((f) => f.count > 0 && f.match.test(url.pathname));
+    const failure = this.failures.find(
+      (f) =>
+        f.count > 0 && f.match.test(f.withQuery ? `${url.pathname}${url.search}` : url.pathname),
+    );
     if (failure) {
       failure.count--;
       return { status: failure.status, json: { error: 'injected' }, headers: failure.headers };

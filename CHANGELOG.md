@@ -24,3 +24,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   content in a paste loads only on request.
 - Recent pastes of this browser.
 - Privacy policy and third-party licenses pages.
+- Public pastes over 25 MiB, and public pastes while the site is rate-limited,
+  open in Google Drive instead of in boh.

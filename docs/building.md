@@ -54,8 +54,9 @@ npm run test:e2e       # browser tests (project "e2e"), needs Chrome
 ## Build configuration
 
 `web/boh.config.json` lists the providers the page offers (`providers`, default
-`["gd"]`, see [providers.md](providers.md)) and the public ids of their apps; the
-`BOH_*` variables above override the ids for a fork or a development build. A
+`["gd"]`, see [providers.md](providers.md)) and has fields for the public ids of
+their apps, kept empty in the repository; the `BOH_*` variables above set the
+ids for a deploy, a fork or a development build. A
 provider that is off is not bundled; one without an id is shown as not
 configured. Nothing in the configuration is secret: it ships in `main.js`.
 

@@ -188,6 +188,27 @@ describe('the render frame', () => {
     await viewer.page.locator('text=too large to show here').waitFor();
   });
 
+  it('sends large public pastes to Google Drive instead of using the site quota', async () => {
+    const viewer = await openPaste('movie.webm', Buffer.alloc(25 * 1024 * 1024 + 1, 1));
+    await viewer.page
+      .locator('#viewer-problem', { hasText: 'too large for boh to show' })
+      .waitFor();
+    expect(await viewer.page.locator('#viewer-elsewhere').getAttribute('href')).toMatch(
+      /^https:\/\/drive\.example\/file\//,
+    );
+    expect(
+      await viewer.page.locator('.viewer-content button', { hasText: 'Download' }).count(),
+    ).toBe(0);
+  });
+
+  it('sends public pastes to Google Drive while the site is rate-limited', async () => {
+    const id = fake.add({ name: 'busy.txt', owner: 'olga', parent: folder, content: 'busy' });
+    fake.server.failNext(429, 3, /alt=media/, { 'retry-after': '0.01' }, true);
+    const viewer = await app.open(`#v1/gd/${textToBase64Url(id)}`);
+    await viewer.page.locator('#viewer-problem', { hasText: 'Too many people' }).waitFor();
+    await viewer.page.locator('#viewer-elsewhere').waitFor();
+  });
+
   it('explains bad, newer and missing links', async () => {
     const viewer = await app.open('#v1/zz/abc');
     await viewer.page.locator('text=not valid').waitFor();

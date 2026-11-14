@@ -336,3 +336,10 @@ textarea {
   font-size: 0.85em;
   padding: 16px;
 }
+a.button {
+  display: inline-block;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 5px 12px;
+  text-decoration: none;
+}

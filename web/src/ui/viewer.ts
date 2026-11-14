@@ -7,6 +7,7 @@
  */
 import { reasonOf, TooLargeError } from '../errors';
 import {
+  ANONYMOUS_MAX_BYTES,
   blobType,
   chooseRenderer,
   formatSize,
@@ -249,7 +250,7 @@ export function viewerView(
           );
           return;
         }
-        const data = await fetchBytes(maxBytesFor(renderer));
+        const data = await fetchBytes(maxBytesFor(renderer, meta.access));
         if (closed) {
           return;
         }
@@ -276,13 +277,7 @@ export function viewerView(
         if (closed) {
           return;
         }
-        content.replaceChildren(
-          h('p', {
-            class: 'problem',
-            text: `${reasonOf(e) === 'too_large' ? 'This paste is too large to show here.' : errorText(e, link.provider)}`,
-          }),
-          button('Download', () => void download(meta)),
-        );
+        content.replaceChildren(...failure(e, meta));
       }
     };
 
@@ -334,10 +329,47 @@ export function viewerView(
     void draw();
   };
 
+  /** Why a paste cannot be shown, and what the viewer can do instead. */
+  const failure = (e: unknown, meta: PasteMeta): Node[] => {
+    const reason = reasonOf(e);
+    const anonymous = meta.access === 'anonymous';
+    const elsewhere = meta.webUrl
+      ? external(`Open in ${label}`, meta.webUrl, { id: 'viewer-elsewhere', class: 'button' })
+      : null;
+    // Over the limit for public pastes read with the site's own key (not merely over the
+    // renderer's limit, like a long text).
+    const overQuotaLimit =
+      anonymous && e instanceof TooLargeError && e.limit === ANONYMOUS_MAX_BYTES;
+    let text: string;
+    if (overQuotaLimit) {
+      text = `This paste is too large for boh to show to everyone with the link. Open it in ${label}.`;
+    } else if (reason === 'too_large') {
+      text = 'This paste is too large to show here.';
+    } else if (reason === 'rate_limited' && anonymous) {
+      text = `Too many people are opening public pastes through boh right now. Open it in ${label}, or try again in a minute.`;
+    } else {
+      text = errorText(e, link.provider);
+    }
+    // Such a public paste is not downloaded through boh either: that would use the site's quota.
+    const canDownload = !(overQuotaLimit || (anonymous && reason === 'rate_limited'));
+    return [
+      h('p', { class: 'problem', id: 'viewer-problem', text }),
+      h(
+        'div',
+        { class: 'actions' },
+        canDownload ? button('Download', () => void download(meta)) : null,
+        elsewhere,
+      ),
+    ];
+  };
+
   const download = async (meta: PasteMeta) => {
     try {
       const blob = await provider.fetch(meta, {
-        maxBytes: Math.max(MEDIA_MAX_BYTES, meta.size ?? 0),
+        maxBytes:
+          meta.access === 'anonymous'
+            ? ANONYMOUS_MAX_BYTES
+            : Math.max(MEDIA_MAX_BYTES, meta.size ?? 0),
         signal: controller.signal,
       });
       const url = URL.createObjectURL(new Blob([blob], { type: 'application/octet-stream' }));
@@ -347,7 +379,12 @@ export function viewerView(
       a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 60000);
     } catch (e) {
-      ctx.notify(errorText(e, link.provider), 'error');
+      ctx.notify(
+        meta.access === 'anonymous' && reasonOf(e) === 'too_large'
+          ? `This paste is too large to download through boh. Open it in ${label}.`
+          : errorText(e, link.provider),
+        'error',
+      );
     }
   };
 

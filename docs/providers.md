@@ -2,9 +2,32 @@
 
 boh talks to each cloud service as an OAuth **public client**: the browser holds
 the tokens and there is no client secret anywhere. Binary Dice Games registers
-one app per service and puts its public id in `web/boh.config.json` (or in the
-repository variables, see [publishing.md](publishing.md)). A service without an
-id is not offered by the page.
+one app per service and sets its public ids as **repository variables**, which
+the Pages deploy reads (see [publishing.md](publishing.md)). A service without
+an id is not offered by the page.
+
+The ids are not secrets: they ship in `main.js` to every visitor. What protects
+them is the app's settings at the provider (redirect URIs, authorized origins,
+and an API key restricted to the Drive and Picker APIs and the site's
+referrers). They are still kept out of the repository, in
+`web/boh.config.json`'s empty fields, so a fork starts without them: they would
+not work for it anyway, since they are tied to the site's address.
+
+## Run your own copy
+
+Anyone can run boh under their own Google Cloud project ("bring your own
+keys"):
+
+1. Fork the repository and enable GitHub Pages (see
+   [publishing.md](publishing.md)), or plan another static host.
+2. Register a Google project as described below, with your site's origin and
+   `auth.html` address.
+3. Set `BOH_GOOGLE_CLIENT_ID`, `BOH_GOOGLE_API_KEY` and `BOH_GOOGLE_APP_ID` as
+   repository variables (or as environment variables for a local build, see
+   [building.md](building.md)).
+
+Your copy then has its own consent screen, quotas and verification; nothing
+goes through Binary Dice Games.
 
 ## Enabled providers
 
@@ -49,6 +72,18 @@ Redirect URI for every app: the deployed `auth.html`, e.g.
 
 boh signs in with OAuth's implicit grant in a popup (Google gives browsers no
 refresh token), so a Google sign-in lasts about an hour.
+
+**Quota.** Calls by signed-in users count against each user's limits. A public
+paste opened **without** a sign-in is read with the site's API key, so it counts
+against the project's quota. boh therefore reads at most 25 MiB per paste that
+way and sends larger public pastes, and every public paste while the project is
+rate-limited, to Google Drive's own viewer instead.
+
+**Terms.** Use of the Drive API is subject to the Google APIs and Drive API
+terms of service, which forbid using Drive as a content delivery network or for
+broad distribution of video. boh is meant for sharing pastes between people;
+the 25 MiB limit above also keeps public bins from being used to stream large
+media through the site.
 
 ## Dropbox
 
