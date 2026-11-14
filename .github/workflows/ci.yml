@@ -1,0 +1,38 @@
+# MIT License © 2026 Binary Dice Games
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: linux, runner: ubuntu-24.04, config: Debug }
+          - { name: macos, runner: macos-15, config: Debug }
+          - { name: windows, runner: windows-latest, config: Debug }
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: cmake -S . -B build
+      - run: cmake --build build --config ${{ matrix.config }} --target web
+      - run: cmake --build build --config ${{ matrix.config }} --target check
+      - run: cmake --build build --config ${{ matrix.config }} --target site
+      - run: ctest --test-dir build -C ${{ matrix.config }} --output-on-failure --parallel
