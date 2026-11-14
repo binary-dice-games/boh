@@ -1,0 +1,377 @@
+# 01_core_features — product, architecture and core
+
+Foundation project. It defines what boh is, how the pieces fit, the provider
+abstraction, the configuration, the paste link, and the renderers. Plan:
+`spec/01_core_features/PLAN.md`. The repository, build and test scaffolding
+already exist and are described in `README.md` and `docs/`; this project does
+not change them beyond what section 8 lists.
+
+## 1. Purpose and scope
+
+boh (bin of holding) is a pastebin without a paste server. A user keeps pastes
+in folders of their own cloud storage (Google Drive, Dropbox, OneDrive). boh is
+a static page on GitHub Pages. In v1 the whole paste cycle happens in boh's
+own page: the user creates and uploads a paste there, gets the link there, and
+the recipient views it there. The provider's own UI is never required, though
+pastes stay ordinary files the user can also manage there. boh:
+
+1. Lets the user **connect** cloud accounts and **register folders** as paste
+   bins, each with a name and a visibility label (public, members, private).
+2. **Creates and uploads pastes** from its own page: text typed or pasted into
+   an editor, a file chosen or dropped, or an image from the clipboard. boh
+   uploads it as one file into the chosen bin through the provider's API and
+   then shows its link. Files that are already in a bin (added through the
+   provider's UI or by other members) are listed and can be linked and viewed
+   too.
+3. **Lists** the pastes in a bin and **deletes** the user's own.
+4. **Makes a boh link** to a paste that anyone can open in boh.
+5. **Shows** a paste with a renderer picked from its format: highlighted text,
+   Markdown, HTML, image, audio, video, PDF, or a download.
+
+The cloud service holds every byte and enforces every permission. boh has no
+server, no database and no analytics; the only state it keeps is the user's
+configuration (in their own cloud, section 4.3) and conveniences in their
+browser.
+
+Non-goals (v1): encryption by boh (the design leaves room: a link can grow a
+key in its fragment later); expiry or burn-after-reading (nothing can delete a
+file when its owner is offline); editing a paste in place; comments; search
+across bins; boh changing a folder's sharing (the user does it in the provider,
+boh shows it and links there); several accounts of the same provider at once;
+running scripts of HTML pastes; a server of our own, even a token proxy.
+
+Owned files: `web/src/` (the app, providers, renderers, `render.html`),
+`scripts/build-web.mjs` and `scripts/build-site.mjs` (new entry points and
+config injection), `tests/`, `docs/`.
+
+## 2. Design goals
+
+1. **No boh server.** Everything runs in the browser against the providers'
+   public APIs with OAuth public clients (no client secret). GitHub Pages only
+   serves static files.
+2. **The provider is the authority.** Who can read or write a paste is
+   whatever the folder's sharing in the provider says. boh never widens access
+   on its own and never pretends a paste is private when it is not.
+3. **A paste is an ordinary file.** Pastes are readable and removable in the
+   provider's own UI without boh; boh adds no sidecar files and no custom
+   container format.
+4. **Opening a link is cheap.** A public paste opens with no sign-in (where the
+   provider allows it); a members-only paste asks for exactly one sign-in to
+   the paste's provider.
+5. **Rendering is contained.** Paste content never runs as code with access to
+   boh's origin, tokens or configuration.
+6. **One provider interface.** The app knows nothing provider-specific beyond
+   the `Provider` contract (section 5.1); adding a provider is one module.
+
+## 3. Architecture
+
+```
+ Browser, https://<org>.github.io/boh/
+┌─────────────────────────────────────────────────────────────────┐
+│ index.html + main.js (app, origin O)                            │
+│  ┌──────────┐  ┌───────────┐  ┌─────────────┐  ┌─────────────┐  │
+│  │ views    │─►│ BinStore  │─►│ Provider    │─►│ AuthSession │  │
+│  │ (bins,   │  │ (config,  │  │ gd | db | od│  │ (tokens per │  │
+│  │ new,     │  │ cache)    │  └──────┬──────┘  │ provider)   │  │
+│  │ viewer)  │  └───────────┘         │ fetch   └─────────────┘  │
+│  └────┬─────┘                        ▼                          │
+│       │ postMessage(bytes,      Drive / Dropbox / Graph APIs    │
+│       │ renderer, options)                                      │
+│  ┌────▼───────────────────────────────────────────┐             │
+│  │ <iframe sandbox="allow-scripts" src=render.html>│ opaque     │
+│  │  render.js: markdown, html, highlight, pdf      │ origin     │
+│  │  ┌──────────────────────────────┐               │            │
+│  │  │ <iframe sandbox srcdoc> HTML │ no scripts    │            │
+│  │  └──────────────────────────────┘               │            │
+│  └─────────────────────────────────────────────────┘            │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+Runtime sequences:
+
+**Owner, first time.** Open boh, press *Connect* on a provider, OAuth in a
+popup (section 4.1). boh reads the account's config file (section 4.3); none
+exists, so the bins list is empty. *Add bin*: pick an existing folder (Google
+Picker; a folder browser over the API for Dropbox and OneDrive) or create a
+new one; give it a name and a visibility label. boh reads the folder's real
+sharing and shows it next to the label, warning on a mismatch (labelled public
+but not shared publicly, labelled private but shared). The config file is
+written.
+
+**Owner, new paste.** Choose a bin, type or drop content, optionally a title
+and format. boh derives the file name (section 4.5), uploads, then asks the
+provider for a share reference suitable for the bin's visibility (section
+4.4), and shows the boh link with *Copy*. The paste is added to the browser's
+recent list.
+
+**Recipient, open link.** boh parses the fragment (section 4.4), selects the
+provider, and tries in order: (1) anonymous fetch if the reference allows it;
+(2) the recipient's token if already signed in to that provider; (3) a
+*Sign in to <provider>* prompt; (4) for Drive under `drive.file`, a *Grant
+access* button that opens the Picker preset to that file; (5) a clear "no
+access, ask the owner" page with *Open in <provider>*. Metadata (name, size,
+MIME type) arrives first; boh picks the renderer (section 4.6), fetches the
+bytes, and renders.
+
+## 4. Core concepts
+
+### 4.1 Accounts and authentication
+
+One account per provider may be connected at a time; Drive, Dropbox and
+OneDrive can be connected together. Each provider module owns its sign-in:
+
+| Provider | Flow | Token lifetime | Scopes |
+|---|---|---|---|
+| Google Drive (`gd`) | Google Identity Services token client in a popup; silent renewal with `prompt: ''` | Access token ~1 h, no refresh token in the browser | `drive.file`, `drive.appdata` |
+| Dropbox (`db`) | Authorization code + PKCE, popup, `token_access_type=offline` | Short access token + refresh token | `files.metadata.read`, `files.content.read`, `files.content.write`, `sharing.read`, `sharing.write`, `account_info.read` (Full Dropbox app) |
+| OneDrive (`od`) | Microsoft identity platform, SPA client, authorization code + PKCE, popup, `common` authority | Access token ~1 h, refresh token (SPA, 24 h rolling) | `Files.ReadWrite`, `Files.Read.All`, `Files.ReadWrite.AppFolder`, `User.Read`, `offline_access` |
+
+PKCE is a small module of our own (Web Crypto), not MSAL or the Dropbox SDK.
+Access tokens stay in memory. Refresh tokens are kept in `localStorage` only
+when the user ticks *Stay signed in on this browser* (default on); otherwise
+in `sessionStorage`. *Disconnect* revokes where the provider has a revoke
+endpoint and clears everything stored for that account.
+
+The OAuth redirect target is `auth.html`, a tiny page that posts the code (or
+the error) to its opener and closes. Client ids and the Google API key are
+public build configuration (section 7.4).
+
+### 4.2 Bins
+
+A **bin** is a provider folder registered in boh:
+
+| Field | Meaning |
+|---|---|
+| `id` | Random id, stable for the bin's life in the config |
+| `name` | Display name chosen by the user |
+| `folder` | Provider folder reference (Drive file id; Dropbox path plus namespace id; OneDrive drive id plus item id) |
+| `visibility` | `public`, `members` or `private`: the user's intent; drives the share reference made for new pastes |
+| `defaultFormat` | Optional format for new text pastes (e.g. `md`) |
+
+The real sharing is read live (`Provider.describeSharing`) and only shown, never
+stored as truth. A recipient who has write access to a group folder registers
+the same folder as their own bin and can add pastes to it.
+
+### 4.3 Configuration
+
+Each connected account stores the bins of that account in one JSON file in
+the provider's app-private area, so the config follows the user to any browser
+after sign-in and each provider's bins live with that provider:
+
+| Provider | Location |
+|---|---|
+| Drive | `appDataFolder/boh-config.json` |
+| Dropbox | `/Apps/boh/boh-config.json` |
+| OneDrive | `special/approot/boh-config.json` |
+
+Schema (versioned, unknown fields preserved on write):
+`{ "format": "boh-config", "version": 1, "bins": Bin[], "defaultBin": id | null }`.
+
+The app shows the union of all connected accounts' bins. A copy of each file
+is cached in `localStorage` (keyed by provider and account id) so the bins
+list appears before the network answers. Writes are read-modify-write with the
+provider's revision (Drive `version`/`modifiedTime`, Dropbox `rev`, Graph
+`eTag`): on conflict boh re-reads, reapplies the single change, and retries
+once, then reports the conflict. A file that fails to parse is never
+overwritten; boh shows it read-only with *Reset*.
+
+Browser-only conveniences, never synced: recent pastes (last 50 boh links
+created or opened, with title and time), the last bin used, renderer
+preferences, theme.
+
+### 4.4 The boh link
+
+```
+https://<org>.github.io/boh/#v1/<provider>/<ref>[?r=<renderer>&n=<name>]
+```
+
+- Everything after `#` stays in the browser: it is never sent to GitHub Pages
+  and, with `referrer: no-referrer`, never to other sites.
+- `<provider>` is `gd`, `db` or `od`. `<ref>` is base64url of a small
+  provider-specific value, opaque to the app:
+
+| Provider | `ref` | Anonymous fetch (if the file allows it) |
+|---|---|---|
+| Drive | file id (plus `resourceKey` if present) | `files.get?alt=media&key=<API key>` |
+| Dropbox | the file's shared link URL | raw download of the shared link (open question, plan step 1) |
+| OneDrive | the sharing URL, used as Graph `shares/u!<b64>` | none known; recipient signs in with any Microsoft account (open question, plan step 1) |
+
+- `r` overrides the renderer; `n` is a display name used before metadata
+  loads. Both are hints; the paste's metadata wins for security decisions.
+- Unknown `v` values show "this link needs a newer boh".
+
+Share reference per bin visibility, made right after upload:
+
+| Visibility | Drive | Dropbox | OneDrive |
+|---|---|---|---|
+| `public` | none needed (the folder's "anyone with the link" permission is inherited) | shared link, audience `public` | sharing link, type `view`, scope `anonymous` |
+| `members` | none needed (inherited folder permissions) | shared link, audience `no_one` (existing members only) | link to the item, existing permissions apply (scope `users`/`organization` as allowed) |
+| `private` | none | shared link, audience `no_one` | as members |
+
+boh never sets a broader audience than the bin's visibility. If the provider
+or the account policy refuses (e.g. work accounts with anonymous links
+disabled), the paste stays uploaded and boh says the link only works for
+people who already have access.
+
+### 4.5 Pastes and formats
+
+A paste is one file in the bin's folder. File name:
+`<slug(title)>.<ext>` or, without a title, `paste-<YYYYMMDD-HHMMSS>.<ext>`;
+on a name clash the provider's auto-rename is used (never overwrite). Text is
+stored as UTF-8 without BOM; uploads keep their bytes and name. The format is
+determined, in order, from: the renderer hint chosen at creation (stored as
+the extension), the file extension, the MIME type the provider reports, then
+content sniffing (valid UTF-8 without NUL in the first 64 KiB means text).
+
+Size limits: text renderers up to 5 MiB, highlighting off above 1 MiB; media
+up to 200 MiB fetched to a blob; above that, *Download* only. Upload limit is
+the provider's simple-upload limit unless the plan adds resumable upload.
+
+### 4.6 Renderers
+
+| Renderer | Formats | Where it runs | Notes |
+|---|---|---|---|
+| `text` | `txt`, `log`, `csv`, `json`, code extensions | render frame | Line numbers, wrap toggle, highlight.js with the language from the extension; *Copy* |
+| `markdown` | `md`, `markdown` | render frame | marked (GFM) then DOMPurify; code blocks highlighted |
+| `html` | `html`, `htm` | nested `srcdoc` frame in the render frame | DOMPurify whole-document, then `sandbox=""` (no scripts, no forms, no top navigation) |
+| `image` | png, jpg, gif, webp, avif, svg | app | Blob URL in `<img>` (SVG as image cannot run script); fit / 100% toggle |
+| `audio` | mp3, ogg, opus, wav, flac, m4a | app | `<audio controls>` |
+| `video` | mp4, webm | app | `<video controls>` |
+| `pdf` | pdf | app | Blob URL in an `<iframe>` (browser viewer); fallback *Download* |
+| `download` | anything else | app | Name, size, type, *Download* |
+
+Text-like renderers (`markdown`, `html`) also offer *Source*, which switches
+to `text`. Remote resources (images, styles, fonts) in Markdown and HTML are
+**blocked by default** (DOMPurify hook rewrites their URLs to a placeholder)
+and loaded only after the viewer presses *Load remote content*, because
+loading them tells third parties that someone opened the paste. Links open in
+a new tab with `rel=noopener noreferrer`.
+
+Highlighting, Markdown and sanitizing live in `render.js` only, loaded lazily
+by the frame, so the app bundle stays small.
+
+## 5. Public contracts
+
+### 5.1 `Provider` (web/src/providers/provider.ts)
+
+Every provider module exports a factory `createXxxProvider(env)` returning:
+
+| Member | Contract |
+|---|---|
+| `id: 'gd' \| 'db' \| 'od'`, `label` | Stable code used in links and config |
+| `signIn(interactive): Promise<Account>` | Popup when `interactive`; silent otherwise; rejects `AuthError` (`reason`: `cancelled`, `popup_blocked`, `denied`, `expired`) |
+| `signOut(): Promise<void>` | Revokes when possible, clears stored tokens |
+| `account(): Account \| null` | `{ id, name, email? }` of the connected account |
+| `readConfig() / writeConfig(cfg, rev)` | Section 4.3; `writeConfig` rejects `ConflictError` on revision mismatch |
+| `pickFolder(): Promise<FolderRef \| null>` | Picker or folder browser; `null` when cancelled |
+| `createFolder(name, parent?)` | New folder; returns `FolderRef` |
+| `describeSharing(folder): Promise<Sharing>` | `{ kind: 'public' \| 'members' \| 'private' \| 'unknown', members?: number, manageUrl }` |
+| `list(folder, cursor?)` | `{ items: PasteMeta[], cursor? }`, newest first where the API allows |
+| `upload(folder, name, blob, mime)` | `PasteMeta`; never overwrites |
+| `share(meta, visibility)` | Returns the `ref` for the link (section 4.4) |
+| `remove(meta)` | Deletes (to the provider's trash where it has one) |
+| `openRef(ref): Promise<PasteMeta>` | Metadata of a linked paste; anonymous first, then with token |
+| `fetch(meta, { maxBytes, signal })` | `Blob`; rejects `TooLargeError` above `maxBytes` |
+| `webUrl(meta)` | URL of the file in the provider's UI |
+
+Errors are `Error` subclasses with a stable `reason` (`ProviderError` with
+`not_found`, `forbidden`, `needs_sign_in`, `needs_grant`, `rate_limited`,
+`network`, `unsupported`). The app maps `needs_sign_in` and `needs_grant` to
+the steps of the recipient sequence; it never parses provider messages.
+
+`env` carries the base URLs of the APIs, client ids, the API key, `fetch`, and
+an `openPopup` function, so tests replace each with fakes (section 7.3).
+
+### 5.2 Render frame protocol
+
+The app posts to the render frame `{ type: 'render', id, renderer, name,
+bytes: ArrayBuffer, options: { remote: boolean, wrap: boolean, theme } }`,
+transferring the buffer. The frame answers `{ type: 'rendered', id, height }`,
+`{ type: 'error', id, reason }`, and `{ type: 'open', url }` for links. The app
+accepts messages only from that frame's `contentWindow`; the frame accepts
+only from `parent` and ignores the origin (it is opaque by design).
+
+## 6. Design decisions
+
+| Decision | Rejected | Why |
+|---|---|---|
+| Drive `drive.file` + Picker | `drive.readonly` / `drive` | Restricted scopes need Google's yearly paid security assessment to publish; with `drive.file`, recipients of members-only pastes press *Grant access* once per paste (or per folder, if the Picker grant covers folders: plan step 1) |
+| Config per account, in that account | One primary account holds all config | No "which account is primary" choice; signing in to a provider brings its bins; disconnecting one provider leaves the others intact |
+| Config in the cloud, cached locally | Browser only | Follows the user to other devices with no boh server |
+| boh link through boh, fragment-based | Sharing the provider's own link | One link format, a chosen renderer, an anonymous path where possible; the provider's link is still one click away (*Open in provider*) |
+| Our own PKCE, no SDKs | MSAL.js, Dropbox SDK, gapi client | Small, auditable, same code for two providers; only Google's sign-in and Picker scripts are external (required by Google) |
+| Render frame from `render.html` with `sandbox="allow-scripts"`, no `allow-same-origin` | Rendering in the app's DOM; `srcdoc` only | The frame has an opaque origin, so even a sanitizer bypass cannot read tokens or config; it needs scripts for its own renderer, so it is a real page with its own CSP rather than a `srcdoc` that would inherit the app's |
+| HTML pastes sanitized and script-free | Running paste scripts in a sandbox | A pastebin shows content; running it invites phishing pages on our origin's name. Can be revisited behind an explicit button |
+| Remote content blocked until asked | Always load | Remote images in a paste are a read receipt to their host |
+| Visibility label stored, sharing read live | Storing sharing state | The provider is the authority (goal 2); sharing changes outside boh |
+| boh does not edit folder sharing | Creating public folders, inviting members | Each provider's sharing model differs and its own UI handles groups, domains and warnings better; boh links to it (`manageUrl`) |
+| Never overwrite on upload | Upsert by name | A paste link must keep pointing at what was shared |
+| Runtime dependencies highlight.js, marked, DOMPurify (render frame only) | Writing our own | Correctness and security of parsing and sanitizing; justified exception to "no runtime dependencies", bundled, pinned by `package-lock.json` |
+
+## 7. Constraints and invariants
+
+### 7.1 Security
+
+1. The app's CSP: `default-src 'none'`; `script-src 'self'
+   https://accounts.google.com https://apis.google.com`; `connect-src` the
+   provider API hosts only; `frame-src 'self' blob: https://docs.google.com
+   https://accounts.google.com` (Picker, sign-in); `img-src 'self' blob:
+   data:`; `media-src blob:`; `base-uri 'none'`; `form-action 'none'`. The
+   exact host list is kept in one place (`web/src/csp.ts` or the build) and a
+   unit test checks the built pages against it.
+2. `render.html` CSP: `script-src 'self'`; `connect-src 'none'`; `img-src`,
+   `style-src` and `font-src` allow `https:` only for the remote-content mode,
+   enforced by the sanitizer hook (the CSP is the outer fence, the hook the
+   inner one).
+3. Tokens and config never enter the render frame; only the paste bytes do.
+4. Paste content never becomes HTML in the app's document; the app inserts
+   names and metadata as text only.
+5. The fragment is parsed strictly; an invalid link shows an error, never a
+   partial fetch.
+
+### 7.2 Behavior
+
+1. No polling: listings refresh on user action and after the app's own writes.
+2. Every network call has an `AbortSignal` and a timeout; navigation away
+   aborts in-flight fetches.
+3. Provider rate limits (`429`, `Retry-After`) are honored with bounded
+   backoff (3 tries), then surfaced as `rate_limited`.
+4. Works on current Chrome, Firefox, Safari and Edge, desktop and mobile;
+   popups are opened from the user's click so they are not blocked.
+5. Accessible: keyboard reachable, labelled controls, renderer output in a
+   titled frame.
+
+### 7.3 Testing
+
+Providers are tested against loopback fakes of the endpoints they use
+(`tests/support/fake-drive.ts`, `fake-dropbox.ts`, `fake-graph.ts`), injected
+through `env`; no test reaches the internet. Browser tests use a test build of
+the site whose provider `env` points at the fakes and whose sign-in returns a
+fake token without a popup. Security tests check that a hostile HTML or
+Markdown paste does not run script, cannot reach `parent` state, and does not
+load remote URLs until asked.
+
+### 7.4 Build configuration
+
+Client ids (Google, Dropbox, Microsoft) and the Google API key are public and
+committed in `web/boh.config.json`; `BOH_GOOGLE_CLIENT_ID`,
+`BOH_DROPBOX_APP_KEY`, `BOH_MS_CLIENT_ID` and `BOH_GOOGLE_API_KEY` override
+them at build time for forks and development. The Google API key is restricted
+in the Google console to the Drive API and to the site's referrers.
+
+## 8. Integration boundaries
+
+- **Providers' apps** (registered by Binary Dice Games, outside the repo):
+  Google Cloud project with Drive API and Picker API, OAuth consent screen
+  (needs a privacy policy page and a verified domain: the `github.io` project
+  site may need the org's user site or a custom domain to verify), Dropbox app
+  (Full Dropbox, production approval for more than 500 users), Microsoft Entra
+  app (SPA platform, personal and work accounts). Redirect URIs: the Pages
+  `auth.html` and `http://localhost:<port>/auth.html` for development.
+- **Site build** (`scripts/build-web.mjs`, `scripts/build-site.mjs`,
+  `scripts/smoke-site.mjs`): new entries `auth.html`, `render.html`,
+  `privacy.html`; config injection; the smoke test checks they are served.
+- **Docs**: `docs/using-boh.md` (bins, links, renderers), `docs/providers.md`
+  (registering the provider apps, scopes, limits), `docs/privacy.md`.
+- Nothing depends on boh; the config file format and the link format are its
+  external contracts and are versioned.
