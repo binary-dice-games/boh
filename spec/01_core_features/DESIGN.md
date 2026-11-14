@@ -10,12 +10,19 @@ not change them beyond what section 8 lists.
 
 boh (bin of holding) is a pastebin without a paste server. A user keeps pastes
 in folders of their own cloud storage (Google Drive, Dropbox, OneDrive). boh is
-a static page on GitHub Pages that:
+a static page on GitHub Pages. In v1 the whole paste cycle happens in boh's
+own page: the user creates and uploads a paste there, gets the link there, and
+the recipient views it there. The provider's own UI is never required, though
+pastes stay ordinary files the user can also manage there. boh:
 
 1. Lets the user **connect** cloud accounts and **register folders** as paste
    bins, each with a name and a visibility label (public, members, private).
-2. **Creates pastes**: typed or pasted text, a file chosen or dropped, or an
-   image from the clipboard, uploaded as one file into a chosen bin.
+2. **Creates and uploads pastes** from its own page: text typed or pasted into
+   an editor, a file chosen or dropped, or an image from the clipboard. boh
+   uploads it as one file into the chosen bin through the provider's API and
+   then shows its link. Files that are already in a bin (added through the
+   provider's UI or by other members) are listed and can be linked and viewed
+   too.
 3. **Lists** the pastes in a bin and **deletes** the user's own.
 4. **Makes a boh link** to a paste that anyone can open in boh.
 5. **Shows** a paste with a renderer picked from its format: highlighted text,
