@@ -1,0 +1,12 @@
+node_modules/
+build/
+dist/
+web/dist/
+site/
+
+package-lock.json
+spec/
+docs/
+*.md
+.claude/
+.github/

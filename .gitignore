@@ -1,0 +1,9 @@
+.vs/
+.vscode/settings.json
+out/
+build**/
+node_modules/
+dist/
+*.tsbuildinfo
+/web/dist/
+/site/
