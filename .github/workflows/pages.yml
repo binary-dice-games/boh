@@ -30,7 +30,15 @@ jobs:
       - id: pages
         uses: actions/configure-pages@v5
       # base_path is "/boh" for a project site and "" for a user site.
+      # Client ids come from web/boh.config.json, or from repository variables (Settings >
+      # Secrets and variables > Actions > Variables) when set. They are public, not secrets.
       - run: node scripts/build-site.mjs site --base "${{ steps.pages.outputs.base_path }}/"
+        env:
+          BOH_GOOGLE_CLIENT_ID: ${{ vars.BOH_GOOGLE_CLIENT_ID }}
+          BOH_GOOGLE_API_KEY: ${{ vars.BOH_GOOGLE_API_KEY }}
+          BOH_GOOGLE_APP_ID: ${{ vars.BOH_GOOGLE_APP_ID }}
+          BOH_DROPBOX_APP_KEY: ${{ vars.BOH_DROPBOX_APP_KEY }}
+          BOH_MS_CLIENT_ID: ${{ vars.BOH_MS_CLIENT_ID }}
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site

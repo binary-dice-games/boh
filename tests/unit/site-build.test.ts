@@ -26,14 +26,52 @@ afterAll(() => {
 });
 
 describe('the Pages site', () => {
-  it('holds the page, its script, the 404 page and .nojekyll', () => {
-    for (const name of ['index.html', 'main.js', '404.html', '.nojekyll']) {
+  it('holds the pages, their scripts, the stylesheet, the privacy and 404 pages and .nojekyll', () => {
+    for (const name of [
+      'index.html',
+      'main.js',
+      'app.css',
+      'render.html',
+      'render.js',
+      'auth.html',
+      'auth.js',
+      'privacy.html',
+      'third-party-licenses.txt',
+      '404.html',
+      '.nojekyll',
+    ]) {
       expect(existsSync(join(out, name)), name).toBe(true);
     }
   });
 
-  it('stamps the version into the page and the base path into the 404 page', () => {
-    expect(readFileSync(join(out, 'index.html'), 'utf8')).not.toContain('{{version}}');
+  it('stamps the version and the policy of each page into the pages', () => {
+    for (const name of ['index.html', 'render.html', 'auth.html']) {
+      const html = readFileSync(join(out, name), 'utf8');
+      expect(html, name).not.toMatch(/\{\{(version|csp)\}\}/);
+      expect(html, name).toContain(`content="default-src 'none'`);
+    }
+    expect(readFileSync(join(out, 'index.html'), 'utf8')).toContain(
+      'connect-src https://www.googleapis.com',
+    );
+    expect(readFileSync(join(out, 'render.html'), 'utf8')).toContain('img-src data: blob: https:');
+  });
+
+  it('ships the licenses of the bundled packages', () => {
+    const text = readFileSync(join(out, 'third-party-licenses.txt'), 'utf8');
+    for (const name of ['dompurify', 'highlight.js', 'marked']) {
+      expect(text).toContain(name);
+    }
+    expect(text).toContain('BSD 3-Clause');
+  });
+
+  it('puts the build configuration in the app and nothing secret', () => {
+    const main = readFileSync(join(out, 'main.js'), 'utf8');
+    expect(main).toContain('https://graph.microsoft.com/v1.0');
+    expect(main).not.toMatch(/client_secret/);
+  });
+
+  it('stamps the base path into the 404 and privacy pages', () => {
+    expect(readFileSync(join(out, 'privacy.html'), 'utf8')).toContain('href="/boh/"');
     const notFound = readFileSync(join(out, '404.html'), 'utf8');
     expect(notFound).not.toContain('{{base}}');
     expect(notFound).toContain('href="/boh/"');
@@ -45,7 +83,7 @@ describe('the Pages site', () => {
 
   it('fails the smoke check on a site that is not there', async () => {
     const problems = await smokeSite(url, async () => new Response('', { status: 500 }));
-    expect(problems).toHaveLength(3);
+    expect(problems).toHaveLength(9);
   });
 });
 

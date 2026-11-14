@@ -5,27 +5,18 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="referrer" content="no-referrer" />
-    <meta
-      http-equiv="Content-Security-Policy"
-      content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; form-action 'none'"
-    />
+    <meta http-equiv="Content-Security-Policy" content="{{csp}}" />
     <title>boh</title>
     <link rel="icon" href="data:," />
-    <style>
-      :root {
-        color-scheme: light dark;
-      }
-      body {
-        font:
-          16px/1.5 system-ui,
-          sans-serif;
-        margin: 0;
-      }
-    </style>
+    <link rel="stylesheet" href="app.css" />
   </head>
   <body>
     <main id="app"></main>
-    <!-- boh {{version}} -->
+    <footer class="footer">
+      boh {{version}} · <a href="privacy.html">Privacy</a> ·
+      <a href="third-party-licenses.txt">Licenses</a> ·
+      <a href="https://github.com/binary-dice-games/boh" rel="noopener noreferrer">Source</a>
+    </footer>
     <script src="main.js"></script>
   </body>
 </html>
