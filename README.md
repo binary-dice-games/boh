@@ -1,4 +1,4 @@
-# boh
+<img src="resources/boh.png" alt="boh" height="200"/>
 
 boh (bin of holding) is a pastebin without a paste server. Pastes live in
 folders of your own Google Drive; boh is a static page on GitHub Pages that
@@ -57,6 +57,7 @@ Needs Node.js 20+; the browser tests need Chrome. See
 | `cmake/` | CMake modules |
 | `docs/` | Documentation |
 | `spec/` | Design and plan documents, one folder per project |
+| `resources/` | Project assets (the logo) |
 
 ## Further Documentation
 
