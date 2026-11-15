@@ -38,3 +38,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   bin link (`#v1/bin/gd/<ref>`) its owner sent; readers see tags, writers can
   edit them.
 - The boh icon beside the name at the top of the page and as the page's icon.
+
+### Changed
+
+- "Stay signed in on this browser" is off by default: a sign-in lasts as long
+  as the tab unless the user ticks it.
+
+### Fixed
+
+- Links to a paste's page in the service open only `https:` and `http:`
+  addresses.
+- The render frame (`render.html`) renders nothing when opened outside boh's
+  sandbox.

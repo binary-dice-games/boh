@@ -139,7 +139,7 @@ Dropbox SDK. The popup is opened on `about:blank` inside the click (popup
 blockers), then sent to the authorization endpoint once the PKCE challenge is
 computed.
 Access tokens stay in memory. Refresh tokens are kept in `localStorage` only
-when the user ticks *Stay signed in on this browser* (default on); otherwise
+when the user ticks *Stay signed in on this browser* (default off); otherwise
 in `sessionStorage`. *Disconnect* revokes where the provider has a revoke
 endpoint and clears everything stored for that account.
 
@@ -378,7 +378,10 @@ by themselves (`target=_blank`, popups escape the sandbox), so there is no
    resources until the viewer asks (section 4.6).
 3. Tokens and config never enter the render frame; only the paste bytes do.
 4. Paste content never becomes HTML in the app's document; the app inserts
-   names and metadata as text only.
+   names and metadata as text only. Links out of boh (`ui/dom.ts` `external`)
+   get an address only when it is `https:` or `http:`.
+   `render.html` does nothing unless its origin is opaque, so opened directly
+   or framed by another site it renders nothing with boh's origin.
 5. The fragment is parsed strictly; an invalid link shows an error, never a
    partial fetch.
 

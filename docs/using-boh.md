@@ -3,8 +3,9 @@
 ## Connect and add bins
 
 1. Press **Connect Google Drive** and sign in in the window that opens.
-   **Stay signed in on this browser** keeps the sign-in after the tab is
-   closed. (Builds that switch on Dropbox or OneDrive show a button for each;
+   The sign-in lasts as long as the tab; tick **Stay signed in on this
+   browser** (off by default) to keep it after the tab is closed and share it
+   with other tabs. (Builds that switch on Dropbox or OneDrive show a button for each;
    several services can be connected at once.)
 2. Press **Add bin**. A bin is a folder in your cloud storage:
    - Google Drive: **Choose a folder in Google Drive** opens Google's picker

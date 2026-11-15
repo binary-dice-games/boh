@@ -13,6 +13,7 @@ boh_add_test(disabled_provider tests/unit/disabled-provider.test.ts)
 boh_add_test(tags tests/unit/tags.test.ts)
 boh_add_test(query tests/unit/query.test.ts)
 boh_add_test(library_index tests/unit/library-index.test.ts)
+boh_add_test(dom tests/unit/dom.test.ts)
 
 # Browser tests need Chrome (BOH_CHROME), see docs/building.md.
 boh_add_test(site tests/e2e/site.test.ts PROJECT e2e)

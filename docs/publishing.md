@@ -12,6 +12,12 @@ repository's Pages path (`/boh/` for a project site), deploys, and then runs
 `scripts/smoke-site.mjs` against the deployed address (it retries for a few
 minutes while the deploy reaches the edges).
 
+Only the `deploy` job holds the `pages: write` and `id-token: write`
+permissions; the `build` job, which installs npm packages, can only read the
+repository. The actions are pinned to commit SHAs (the tag in a comment beside
+each); update them by SHA. Anything merged into `main` runs with the users'
+sign-ins, so protect the branch.
+
 Before the first deploy, set **Settings > Pages > Source** to **GitHub
 Actions** in the repository. Pages for a private repository needs a paid
 GitHub plan; for a public one it is free.
