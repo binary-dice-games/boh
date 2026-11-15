@@ -1,6 +1,10 @@
 {
   "providers": ["gd"],
-  "google": { "clientId": "", "apiKey": "", "appId": "" },
+  "google": {
+    "clientId": "907182785225-6lo67ph65id9sd5ttiehktehb2b5npni.apps.googleusercontent.com",
+    "apiKey": "AIzaSyCJifUR0-D-l-8om8VXcb9WCoG-D_VUOKo",
+    "appId": "907182785225"
+  },
   "dropbox": { "appKey": "" },
   "microsoft": { "clientId": "" }
 }
