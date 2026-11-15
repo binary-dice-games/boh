@@ -5,7 +5,7 @@
  * bin in the account's configuration.
  */
 import type { BinEntry } from '../bin-store';
-import { newBinId } from '../config-file';
+import { newBinId, type BinOwner } from '../config-file';
 import { TEXT_FORMATS } from '../formats';
 import {
   VISIBILITIES,
@@ -22,6 +22,7 @@ import {
   VISIBILITY_HINTS,
   VISIBILITY_LABELS,
 } from './messages';
+import { tagEditor } from './tag-editor';
 
 const visibilityOptions = (): [string, string][] =>
   VISIBILITIES.map((v) => [v, `${VISIBILITY_LABELS[v]}: ${VISIBILITY_HINTS[v]}`]);
@@ -51,6 +52,23 @@ export function openBinDialog(ctx: AppContext, entry?: BinEntry): void {
     id: 'bin-format',
   });
   const problem = h('p', { class: 'problem', hidden: true });
+  const shared = h('input', { type: 'checkbox', id: 'bin-shared', checked: entry?.bin.shared });
+  const ownerLine = h('p', {
+    class: 'muted',
+    id: 'bin-owner',
+    text: entry?.bin.owner ? `Owned by ${entry.bin.owner.name}.` : '',
+  });
+  let owner: BinOwner | undefined = entry?.bin.owner;
+  const defaultTags = tagEditor({
+    id: 'bin-default-tags',
+    tags: entry?.bin.defaultTags ?? [],
+    suggestions: () => ctx.library.knownTags(),
+  });
+  const defaultTagsField = field(
+    'Default tags',
+    defaultTags.element,
+    'Preselected for new pastes in this bin',
+  );
   const save = h('button', {
     type: 'submit',
     class: 'primary',
@@ -73,6 +91,23 @@ export function openBinDialog(ctx: AppContext, entry?: BinEntry): void {
   };
   let sharing: Parameters<typeof sharingMismatch>[1] | undefined;
   visibility.addEventListener('change', () => checkMismatch(sharing));
+
+  /** Who owns the folder: a shared folder becomes a shared bin (members by default). */
+  const describeOwner = (p: Provider, f: FolderRef) => {
+    if (!p.describeFolder) {
+      return;
+    }
+    p.describeFolder(f).then(
+      (info) => {
+        shared.checked = !info.ownedByMe;
+        owner = info.ownedByMe ? undefined : info.owner;
+        ownerLine.textContent = info.ownedByMe
+          ? ''
+          : `Owned by ${info.owner?.name ?? 'someone else'}. ${info.canAdd ? 'You can add pastes to it.' : 'You can only read it: you cannot add pastes or change their tags.'}`;
+      },
+      () => undefined,
+    );
+  };
 
   const describe = (p: Provider, f: FolderRef, preset: boolean) => {
     sharingLine.textContent = 'Checking the folder’s sharing…';
@@ -129,6 +164,7 @@ export function openBinDialog(ctx: AppContext, entry?: BinEntry): void {
       drawChooser();
       if (provider) {
         describe(provider, f, true);
+        describeOwner(provider, f);
       }
     };
     const drawChooser = () => {
@@ -168,7 +204,19 @@ export function openBinDialog(ctx: AppContext, entry?: BinEntry): void {
             { id: 'pick-folder' },
           ),
         );
+        if (p.capabilities.binLinks) {
+          chooser.append(
+            button(
+              'Choose a folder shared with me',
+              () => {
+                p.pickFolder!({ shared: true }).then((f) => f && choose(f), fail);
+              },
+              { id: 'pick-shared-folder' },
+            ),
+          );
+        }
       }
+      defaultTagsField.hidden = !p.capabilities.tags;
       if (p.listFolders) {
         const draw = () => {
           browser.replaceChildren(h('p', { class: 'muted', text: 'Loading folders…' }));
@@ -244,6 +292,9 @@ export function openBinDialog(ctx: AppContext, entry?: BinEntry): void {
       save.disabled = true;
       chosen.textContent = 'No folder chosen yet.';
       sharingLine.textContent = '';
+      ownerLine.textContent = '';
+      shared.checked = false;
+      owner = undefined;
       drawChooser();
     });
     form.append(
@@ -255,9 +306,14 @@ export function openBinDialog(ctx: AppContext, entry?: BinEntry): void {
       field('Account', account),
       chooser,
       chosen,
+      ownerLine,
       sharingLine,
     );
     drawChooser();
+  }
+  if (entry) {
+    form.append(ownerLine);
+    defaultTagsField.hidden = !ctx.providers[entry.provider].capabilities.tags;
   }
 
   form.append(
@@ -269,6 +325,8 @@ export function openBinDialog(ctx: AppContext, entry?: BinEntry): void {
     ),
     mismatch,
     field('Default format', defaultFormat, 'For text pastes'),
+    defaultTagsField,
+    h('label', { class: 'inline' }, shared, ' Someone else owns this folder and shared it with me'),
     problem,
     h('div', { class: 'actions' }, button('Cancel', close), save),
   );
@@ -276,23 +334,35 @@ export function openBinDialog(ctx: AppContext, entry?: BinEntry): void {
   form.addEventListener('submit', (event) => {
     event.preventDefault();
     const binName = name.value.trim();
-    if (!binName || !folder || !provider) {
+    const p = provider;
+    const f = folder;
+    if (!binName || !f || !p) {
       return;
     }
     save.disabled = true;
-    const done = entry
-      ? ctx.store.updateBin(entry.bin.id, {
+    const done = defaultTags.commit().then(() => {
+      const tagsOf = p.capabilities.tags ? defaultTags.tags() : [];
+      if (entry) {
+        return ctx.store.updateBin(entry.bin.id, {
           name: binName,
           visibility: visibility.value as Visibility,
           defaultFormat: defaultFormat.value,
-        })
-      : ctx.store.addBin(provider.id, {
-          id: newBinId(),
-          name: binName,
-          folder,
-          visibility: visibility.value as Visibility,
-          defaultFormat: defaultFormat.value,
+          defaultTags: tagsOf.length ? tagsOf : undefined,
+          shared: shared.checked || undefined,
+          owner: shared.checked ? owner : undefined,
         });
+      }
+      return ctx.store.addBin(p.id, {
+        id: newBinId(),
+        name: binName,
+        folder: f,
+        visibility: visibility.value as Visibility,
+        defaultFormat: defaultFormat.value,
+        ...(tagsOf.length ? { defaultTags: tagsOf } : {}),
+        ...(shared.checked ? { shared: true } : {}),
+        ...(shared.checked && owner ? { owner } : {}),
+      });
+    });
     done.then(
       () => {
         ctx.notify(entry ? 'Bin saved.' : `Added the bin ${binName}.`);

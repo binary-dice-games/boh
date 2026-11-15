@@ -5,6 +5,7 @@
  */
 import { BinStore } from './bin-store';
 import { buildConfig } from './config';
+import { browserLibraryCache, LibraryIndex } from './library-index';
 import { LocalState } from './local-state';
 import type { PopupEnv } from './oauth';
 import { createDisabledProvider } from './providers/disabled';
@@ -41,5 +42,12 @@ const providers = {
 const siteUrl = `${location.origin}${location.pathname}`;
 const root = document.getElementById('app');
 if (root) {
-  new App(providers, new BinStore(providers, local), new LocalState(local), siteUrl, root).start();
+  new App(
+    providers,
+    new BinStore(providers, local),
+    new LocalState(local),
+    new LibraryIndex(providers, browserLibraryCache()),
+    siteUrl,
+    root,
+  ).start();
 }

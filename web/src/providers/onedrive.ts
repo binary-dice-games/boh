@@ -131,6 +131,7 @@ export function createOneDriveProvider(env: ProviderEnv): Provider {
     label: 'OneDrive',
     configured: Boolean(cfg.clientId),
     maxUploadBytes: 200 * 1024 * 1024,
+    capabilities: { tags: false, binLinks: false },
 
     async signIn({ stay, signal }) {
       if (!cfg.clientId) {
@@ -274,7 +275,10 @@ export function createOneDriveProvider(env: ProviderEnv): Provider {
       return { items, cursor: page['@odata.nextLink'] };
     },
 
-    async upload(folder, name, blob) {
+    async upload(folder, name, blob, options) {
+      if (options?.tags?.length) {
+        throw new ProviderError('unsupported', 'boh cannot keep tags in OneDrive yet');
+      }
       const item = await call<Item>(
         `${folderUrlOf(folder)}:/${encodeURIComponent(name)}:/content?@microsoft.graph.conflictBehavior=rename`,
         {
@@ -309,6 +313,12 @@ export function createOneDriveProvider(env: ProviderEnv): Provider {
       }
       const { link } = await jsonOf<{ link: { webUrl: string } }>(res);
       return textToBase64Url(`u:${link.webUrl}`);
+    },
+
+    setTags() {
+      return Promise.reject(
+        new ProviderError('unsupported', 'boh cannot keep tags in OneDrive yet'),
+      );
     },
 
     async remove(meta) {

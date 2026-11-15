@@ -15,6 +15,7 @@ import {
 import { BohError, ConflictError } from './errors';
 import type { Provider, ProviderId } from './providers/provider';
 import type { SafeStore } from './storage';
+import type { TagRule } from './tags';
 
 /** One account's configuration as boh holds it. */
 export interface AccountConfig {
@@ -210,10 +211,43 @@ export class BinStore {
     });
   }
 
-  /** Changes a bin's name, visibility or default format. */
+  /** The tag rules of the account `id`. */
+  rules(id: ProviderId): TagRule[] {
+    return this.states.get(id)?.config.rules ?? [];
+  }
+
+  /** The bin with the same provider and folder as given, if one is registered. */
+  findFolder(provider: ProviderId, folderId: string): BinEntry | undefined {
+    return this.bins().find((e) => e.provider === provider && e.bin.folder.id === folderId);
+  }
+
+  /** Adds a tag rule to the account `id`. */
+  addRule(id: ProviderId, rule: TagRule): Promise<void> {
+    return this.mutate(id, (config) => {
+      config.rules = [...(config.rules ?? []), rule];
+    });
+  }
+
+  /** Replaces the tag rule with `rule.id` in the account `id` (no change when it is gone). */
+  updateRule(id: ProviderId, rule: TagRule): Promise<void> {
+    return this.mutate(id, (config) => {
+      config.rules = (config.rules ?? []).map((r) => (r.id === rule.id ? rule : r));
+    });
+  }
+
+  /** Removes the tag rule `ruleId` from the account `id`. */
+  removeRule(id: ProviderId, ruleId: string): Promise<void> {
+    return this.mutate(id, (config) => {
+      config.rules = (config.rules ?? []).filter((r) => r.id !== ruleId);
+    });
+  }
+
+  /** Changes a bin's name, visibility, default format, default tags or shared mark. */
   updateBin(
     binId: string,
-    patch: Partial<Pick<Bin, 'name' | 'visibility' | 'defaultFormat'>>,
+    patch: Partial<
+      Pick<Bin, 'name' | 'visibility' | 'defaultFormat' | 'defaultTags' | 'shared' | 'owner'>
+    >,
   ): Promise<void> {
     const entry = this.find(binId);
     if (!entry) {
@@ -227,7 +261,10 @@ export class BinStore {
     });
   }
 
-  /** Removes a bin from boh (the folder and its files stay). */
+  /**
+   * Removes a bin from boh (the folder and its files stay). Rules naming it lose it; a rule left
+   * with no bin is removed rather than turned into a rule for every bin.
+   */
   removeBin(binId: string): Promise<void> {
     const entry = this.find(binId);
     if (!entry) {
@@ -237,6 +274,15 @@ export class BinStore {
       config.bins = config.bins.filter((b) => b.id !== binId);
       if (config.defaultBin === binId) {
         config.defaultBin = config.bins[0]?.id ?? null;
+      }
+      if (config.rules) {
+        config.rules = config.rules.flatMap((r) => {
+          if (!r.bins.includes(binId)) {
+            return [r];
+          }
+          const bins = r.bins.filter((b) => b !== binId);
+          return bins.length ? [{ ...r, bins }] : [];
+        });
       }
     });
   }

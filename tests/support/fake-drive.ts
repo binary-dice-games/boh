@@ -14,6 +14,9 @@ import {
 } from './fake-http';
 
 const FOLDER = 'application/vnd.google-apps.folder';
+/** Drive's limits on an app's private properties of one file. */
+const MAX_APP_PROPERTIES = 30;
+const MAX_PROPERTY_BYTES = 124;
 
 /** A file or folder. */
 export interface DriveFile {
@@ -25,7 +28,12 @@ export interface DriveFile {
   owner: string;
   appData: boolean;
   anyone: boolean;
+  /** Users with write access (Drive's writers). */
   members: Set<string>;
+  /** Users with read access only. */
+  readers: Set<string>;
+  /** Private properties of boh, as Drive keeps them per app. */
+  appProperties: Map<string, string>;
   version: number;
   trashed: boolean;
   createdTime: string;
@@ -106,7 +114,9 @@ export class FakeDrive {
     content?: string | Buffer;
     anyone?: boolean;
     members?: string[];
+    readers?: string[];
     createdByApp?: boolean;
+    appProperties?: Record<string, string>;
   }): string {
     const id = randomId(20);
     this.files.set(id, {
@@ -119,6 +129,8 @@ export class FakeDrive {
       appData: false,
       anyone: spec.anyone ?? false,
       members: new Set(spec.members ?? []),
+      readers: new Set(spec.readers ?? []),
+      appProperties: new Map(Object.entries(spec.appProperties ?? {})),
       version: 1,
       trashed: false,
       createdTime: this.tick(),
@@ -186,6 +198,7 @@ export class FakeDrive {
       f.owner === user ||
       f.anyone ||
       f.members.has(user) ||
+      f.readers.has(user) ||
       this.parentsOf(f).some((p) => this.hasPermission(user, p))
     );
   }
@@ -207,11 +220,21 @@ export class FakeDrive {
     return this.hasPermission(user, f) && this.appAccess(user, f);
   }
 
+  /** Whether `user` may change `f`: its owner or a writer of it or of a folder above it. */
+  canEdit(user: string, f: DriveFile): boolean {
+    return (
+      f.owner === user ||
+      f.members.has(user) ||
+      this.parentsOf(f).some((p) => this.canEdit(user, p))
+    );
+  }
+
   private anyoneUp(f: DriveFile): boolean {
     return f.anyone || this.parentsOf(f).some((p) => this.anyoneUp(p));
   }
 
-  private meta(f: DriveFile) {
+  private meta(f: DriveFile, user?: string) {
+    const canEdit = user !== undefined && this.canEdit(user, f);
     return {
       id: f.id,
       name: f.name,
@@ -220,7 +243,41 @@ export class FakeDrive {
       modifiedTime: f.createdTime,
       webViewLink: `https://drive.example/file/${f.id}`,
       version: String(f.version),
+      ...(f.appProperties.size ? { appProperties: Object.fromEntries(f.appProperties) } : {}),
+      ownedByMe: f.owner === user,
+      owners: [
+        { displayName: this.userInfo(f.owner).displayName, emailAddress: `${f.owner}@example.com` },
+      ],
+      capabilities: { canEdit, canAddChildren: f.mimeType === FOLDER && canEdit },
     };
+  }
+
+  /** Applies an `appProperties` patch as Drive does; an error answer when it breaks a limit. */
+  private setAppProperties(
+    f: DriveFile,
+    patch: Record<string, string | null> | undefined,
+  ): FakeResponse | undefined {
+    if (!patch) {
+      return undefined;
+    }
+    const next = new Map(f.appProperties);
+    for (const [key, value] of Object.entries(patch)) {
+      if (!/^[A-Za-z0-9._-]+$/.test(key)) {
+        return { status: 400, json: { error: { message: 'invalid property key' } } };
+      }
+      if (value === null) {
+        next.delete(key);
+      } else if (Buffer.byteLength(key) + Buffer.byteLength(value) > MAX_PROPERTY_BYTES) {
+        return { status: 400, json: { error: { message: 'property too large' } } };
+      } else {
+        next.set(key, value);
+      }
+    }
+    if (next.size > MAX_APP_PROPERTIES) {
+      return { status: 400, json: { error: { message: 'too many properties' } } };
+    }
+    f.appProperties = next;
+    return undefined;
   }
 
   private list(r: FakeRequest, user: string): FakeResponse {
@@ -251,15 +308,19 @@ export class FakeDrive {
     const page = found.slice(start, start + size);
     const next = start + size < found.length ? String(start + size) : undefined;
     return {
-      json: { files: page.map((f) => this.meta(f)), ...(next ? { nextPageToken: next } : {}) },
+      json: {
+        files: page.map((f) => this.meta(f, user)),
+        ...(next ? { nextPageToken: next } : {}),
+      },
     };
   }
 
   private get(r: FakeRequest, id: string): FakeResponse {
     const f = this.files.get(id);
     let allowed: boolean;
+    let user: string | undefined;
     if (r.token) {
-      const user = this.tokens.get(r.token);
+      user = this.tokens.get(r.token);
       if (!user) {
         return { status: 401, json: {} };
       }
@@ -278,7 +339,7 @@ export class FakeDrive {
         headers: { 'content-type': f.mimeType, 'content-length': String(f.content.length) },
       };
     }
-    return { json: this.meta(f) };
+    return { json: this.meta(f, user) };
   }
 
   private permissions(user: string, id: string): FakeResponse {
@@ -295,6 +356,7 @@ export class FakeDrive {
           { type: 'user', role: 'owner' },
           ...(f.anyone ? [{ type: 'anyone', role: 'reader' }] : []),
           ...[...f.members].map(() => ({ type: 'user', role: 'writer' })),
+          ...[...f.readers].map(() => ({ type: 'user', role: 'reader' })),
         ],
       },
     };
@@ -316,7 +378,12 @@ export class FakeDrive {
 
   private create(
     user: string,
-    metadata: { name?: string; mimeType?: string; parents?: string[] },
+    metadata: {
+      name?: string;
+      mimeType?: string;
+      parents?: string[];
+      appProperties?: Record<string, string>;
+    },
     content: Buffer,
   ): FakeResponse {
     const parent = metadata.parents?.[0];
@@ -334,13 +401,19 @@ export class FakeDrive {
       appData: parent === 'appDataFolder',
       anyone: false,
       members: new Set(),
+      readers: new Set(),
+      appProperties: new Map(),
       version: 1,
       trashed: false,
       createdTime: this.tick(),
       createdByApp: true,
     };
+    const refused = this.setAppProperties(file, metadata.appProperties);
+    if (refused) {
+      return refused;
+    }
     this.files.set(id, file);
-    return { json: this.meta(file) };
+    return { json: this.meta(file, user) };
   }
 
   private createMeta(
@@ -350,18 +423,38 @@ export class FakeDrive {
     return this.create(user, body, Buffer.alloc(0));
   }
 
-  private patch(user: string, id: string, body: { trashed?: boolean }): FakeResponse {
+  private patch(
+    user: string,
+    id: string,
+    body: { trashed?: boolean; appProperties?: Record<string, string | null> },
+  ): FakeResponse {
     const f = this.files.get(id);
     if (!f || !this.canRead(user, f)) {
       return { status: 404, json: {} };
     }
-    if (f.owner !== user) {
+    if (body.trashed !== undefined && f.owner !== user) {
       return { status: 403, json: {} };
+    }
+    if (body.appProperties !== undefined && !this.canEdit(user, f)) {
+      return { status: 403, json: { error: { message: 'the user cannot edit this file' } } };
+    }
+    const refused = this.setAppProperties(f, body.appProperties);
+    if (refused) {
+      return refused;
     }
     if (body.trashed !== undefined) {
       f.trashed = body.trashed;
     }
-    return { json: this.meta(f) };
+    return { json: this.meta(f, user) };
+  }
+
+  /** The tags boh keeps on a file, decoded (for checks in tests). */
+  tagsOf(id: string): string[] {
+    const f = this.files.get(id);
+    return [...(f?.appProperties.keys() ?? [])]
+      .filter((k) => k.startsWith('t.'))
+      .map((k) => Buffer.from(k.slice(2), 'base64url').toString('utf8'))
+      .sort();
   }
 
   private upload(r: FakeRequest, user: string): FakeResponse {
@@ -414,7 +507,7 @@ export class FakeDrive {
     }
     f.content = content;
     f.version++;
-    return { json: this.meta(f) };
+    return { json: this.meta(f, user) };
   }
 
   private pick(user: string, id: string): FakeResponse {

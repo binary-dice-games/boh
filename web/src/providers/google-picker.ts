@@ -10,8 +10,12 @@ import { ProviderError } from '../errors';
 /** What the picker returns: the chosen item, or `null` when cancelled. */
 export type Picked = { id: string; name: string } | null;
 
-/** What to pick: a folder, or one given file (to grant boh access to it). */
-export type PickRequest = { kind: 'folder' } | { kind: 'file'; fileId: string };
+/**
+ * What to pick: a folder (the user's own, those shared with them, or one given folder to grant boh
+ * access to it), or one given file (to grant boh access to it).
+ */
+export type PickRequest =
+  { kind: 'folder'; shared?: boolean; folderId?: string } | { kind: 'file'; fileId: string };
 
 /** A picker. */
 export interface GooglePicker {
@@ -52,16 +56,25 @@ export function createGooglePicker(config: BohConfig['google']): GooglePicker {
     async pick(request, token) {
       await loadPickerApi(config.pickerScript);
       const g = (window as PickerWindow).google.picker;
-      const view =
-        request.kind === 'folder'
-          ? new g.DocsView(g.ViewId.FOLDERS)
-              .setIncludeFolders(true)
-              .setSelectFolderEnabled(true)
-              .setMimeTypes('application/vnd.google-apps.folder')
-          : new g.DocsView(g.ViewId.DOCS).setFileIds(request.fileId).setMode(g.DocsViewMode.LIST);
+      const folders = () =>
+        new g.DocsView(g.ViewId.FOLDERS)
+          .setIncludeFolders(true)
+          .setSelectFolderEnabled(true)
+          .setMimeTypes('application/vnd.google-apps.folder');
+      const views =
+        request.kind === 'file'
+          ? [new g.DocsView(g.ViewId.DOCS).setFileIds(request.fileId).setMode(g.DocsViewMode.LIST)]
+          : request.folderId
+            ? [folders().setFileIds(request.folderId).setMode(g.DocsViewMode.LIST)]
+            : request.shared
+              ? [folders().setOwnedByMe(false), folders().setEnableDrives(true)]
+              : [folders()];
       return new Promise<Picked>((resolve) => {
-        const picker = new g.PickerBuilder()
-          .addView(view)
+        const builder = new g.PickerBuilder();
+        for (const view of views) {
+          builder.addView(view);
+        }
+        const picker = builder
           .setOAuthToken(token)
           .setDeveloperKey(config.apiKey)
           .setAppId(config.appId)
@@ -85,12 +98,14 @@ export function createGooglePicker(config: BohConfig['google']): GooglePicker {
 export function createTestPicker(config: BohConfig['google']): GooglePicker {
   return {
     async pick(request, token) {
-      const id =
-        request.kind === 'folder'
-          ? window.prompt('Folder id')
-          : window.confirm(`Let boh open ${request.fileId}?`)
-            ? request.fileId
-            : null;
+      const given = request.kind === 'file' ? request.fileId : request.folderId;
+      const id = given
+        ? window.confirm(`Let boh open ${given}?`)
+          ? given
+          : null
+        : window.prompt(
+            request.kind === 'folder' && request.shared ? 'Shared folder id' : 'Folder id',
+          );
       if (!id) {
         return null;
       }

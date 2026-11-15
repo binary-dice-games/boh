@@ -5,14 +5,23 @@
  * linked files boh did not create are reached through Google's Picker.
  */
 import { textToBase64Url, base64UrlToText } from '../b64';
-import { AuthError, ConflictError, ProviderError, TooLargeError } from '../errors';
+import {
+  AuthError,
+  ConflictError,
+  LinkError,
+  ProviderError,
+  TagError,
+  TooLargeError,
+} from '../errors';
 import { jsonOf, readLimited, send, statusError } from '../http';
 import { authorizeInPopup, openSignInPopup } from '../oauth';
+import { applyTagChange, normalizeTag, sortTags, tagKey, tagOfKey, MAX_TAGS } from '../tags';
 import { createGooglePicker, createTestPicker, type GooglePicker } from './google-picker';
 import type {
   Account,
   ConfigSnapshot,
   FetchOptions,
+  FolderInfo,
   FolderRef,
   ListPage,
   PasteMeta,
@@ -26,7 +35,10 @@ const SCOPE_FILE = 'https://www.googleapis.com/auth/drive.file';
 const SCOPE_APPDATA = 'https://www.googleapis.com/auth/drive.appdata';
 const FOLDER_MIME = 'application/vnd.google-apps.folder';
 const CONFIG_NAME = 'boh-config.json';
-const FIELDS = 'id,name,mimeType,size,modifiedTime,webViewLink,resourceKey,version';
+const FIELDS =
+  'id,name,mimeType,size,modifiedTime,webViewLink,resourceKey,version,appProperties,ownedByMe,capabilities/canEdit';
+const FOLDER_FIELDS =
+  'id,name,ownedByMe,owners(displayName,emailAddress),capabilities/canAddChildren';
 /** Above this an upload is resumable instead of multipart. */
 const MULTIPART_MAX = 5 * 1024 * 1024;
 
@@ -39,6 +51,34 @@ interface DriveFile {
   webViewLink?: string;
   resourceKey?: string;
   version?: string;
+  appProperties?: Record<string, string>;
+  ownedByMe?: boolean;
+  owners?: { displayName?: string; emailAddress?: string }[];
+  capabilities?: { canEdit?: boolean; canAddChildren?: boolean };
+}
+
+/** The tags stored in a file's `appProperties`; other keys are ignored. */
+function tagsOf(f: DriveFile): string[] {
+  return sortTags(
+    Object.keys(f.appProperties ?? {})
+      .map(tagOfKey)
+      .filter((t): t is string => t !== undefined),
+  );
+}
+
+/**
+ * Normalized tags for an upload.
+ * @throws {TagError} `invalid_tag`, `too_many_tags`
+ */
+function uploadTags(tags: readonly string[] | undefined): Record<string, string> | undefined {
+  if (!tags?.length) {
+    return undefined;
+  }
+  const clean = sortTags(tags.map(normalizeTag));
+  if (clean.length > MAX_TAGS) {
+    throw new TagError('too_many_tags', `a paste can have at most ${MAX_TAGS} tags`);
+  }
+  return Object.fromEntries(clean.map((t) => [tagKey(t), '1']));
 }
 
 /** A query string literal. */
@@ -63,7 +103,13 @@ export function createDriveProvider(env: ProviderEnv, picker?: GooglePicker): Pr
     webUrl: f.webViewLink,
     access,
     source: f.resourceKey,
+    tags: tagsOf(f),
+    canEdit: access === 'anonymous' ? false : f.capabilities?.canEdit,
+    ownedByMe: access === 'anonymous' ? false : f.ownedByMe,
   });
+
+  const keyHeaders = (meta: PasteMeta): Record<string, string> =>
+    meta.source ? { 'x-goog-drive-resource-keys': `${meta.key}/${meta.source}` } : {};
 
   async function call<T>(url: string, init: RequestInit = {}, what = 'Drive'): Promise<T> {
     const res = await session.request(url, init);
@@ -96,20 +142,26 @@ export function createDriveProvider(env: ProviderEnv, picker?: GooglePicker): Pr
   async function createFile(metadata: object, blob: Blob): Promise<DriveFile> {
     if (blob.size <= MULTIPART_MAX) {
       const { body, type } = multipart(metadata, blob);
-      return call<DriveFile>(`${upload}/files?uploadType=multipart&fields=${FIELDS}`, {
-        method: 'POST',
-        headers: { 'content-type': type },
-        body,
-      });
+      return call<DriveFile>(
+        `${upload}/files?uploadType=multipart&fields=${encodeURIComponent(FIELDS)}`,
+        {
+          method: 'POST',
+          headers: { 'content-type': type },
+          body,
+        },
+      );
     }
-    const start = await session.request(`${upload}/files?uploadType=resumable&fields=${FIELDS}`, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json; charset=UTF-8',
-        'x-upload-content-type': blob.type || 'application/octet-stream',
+    const start = await session.request(
+      `${upload}/files?uploadType=resumable&fields=${encodeURIComponent(FIELDS)}`,
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json; charset=UTF-8',
+          'x-upload-content-type': blob.type || 'application/octet-stream',
+        },
+        body: JSON.stringify(metadata),
       },
-      body: JSON.stringify(metadata),
-    });
+    );
     const location = start.headers.get('location');
     if (!start.ok || !location) {
       throw statusError(start, 'Drive upload');
@@ -140,6 +192,7 @@ export function createDriveProvider(env: ProviderEnv, picker?: GooglePicker): Pr
     label: 'Google Drive',
     configured: Boolean(cfg.clientId),
     maxUploadBytes: 200 * 1024 * 1024,
+    capabilities: { tags: true, binLinks: true },
 
     async signIn({ stay, signal }) {
       if (!cfg.clientId) {
@@ -236,9 +289,53 @@ export function createDriveProvider(env: ProviderEnv, picker?: GooglePicker): Pr
       return `${file.id}:${file.version}`;
     },
 
-    async pickFolder() {
-      const picked = await thePicker.pick({ kind: 'folder' }, await session.accessToken());
+    async pickFolder(options = {}) {
+      const picked = await thePicker.pick(
+        { kind: 'folder', shared: options.shared, folderId: options.folderId },
+        await session.accessToken(),
+      );
       return picked ? { id: picked.id, name: picked.name } : null;
+    },
+
+    async describeFolder(folder): Promise<FolderInfo> {
+      const res = await session.request(
+        `${api}/files/${folder.id}?supportsAllDrives=true&fields=${encodeURIComponent(FOLDER_FIELDS)}`,
+      );
+      if (res.status === 403 || res.status === 404) {
+        throw new ProviderError(
+          'needs_grant',
+          'boh needs permission to open this folder',
+          res.status,
+        );
+      }
+      if (!res.ok) {
+        throw statusError(res, 'Drive folder');
+      }
+      const f = await jsonOf<DriveFile>(res);
+      const owner = f.owners?.[0];
+      return {
+        name: f.name,
+        owner: owner?.displayName
+          ? { name: owner.displayName, email: owner.emailAddress }
+          : undefined,
+        ownedByMe: f.ownedByMe ?? false,
+        canAdd: f.capabilities?.canAddChildren ?? false,
+      };
+    },
+
+    refOfFolder: (folder) => textToBase64Url(folder.id),
+
+    folderRef(ref) {
+      let id: string;
+      try {
+        id = base64UrlToText(ref);
+      } catch {
+        throw new LinkError('the folder reference is damaged');
+      }
+      if (!/^[A-Za-z0-9_-]+$/.test(id)) {
+        throw new LinkError('the folder reference is damaged');
+      }
+      return { id, name: '' };
     },
 
     async createFolder(name, parent) {
@@ -294,9 +391,46 @@ export function createDriveProvider(env: ProviderEnv, picker?: GooglePicker): Pr
       return { items: page.files.map((f) => toMeta(f, 'token')), cursor: page.nextPageToken };
     },
 
-    async upload(folder, name, blob) {
-      const file = await createFile({ name, parents: [folder.id] }, blob);
+    async upload(folder, name, blob, options) {
+      const appProperties = uploadTags(options?.tags);
+      const file = await createFile(
+        { name, parents: [folder.id], ...(appProperties ? { appProperties } : {}) },
+        blob,
+      );
       return toMeta(file, 'token');
+    },
+
+    async setTags(meta, change, signal) {
+      const add = (change.add ?? []).map(normalizeTag);
+      const remove = (change.remove ?? []).map(normalizeTag);
+      const url = `${api}/files/${meta.key}?supportsAllDrives=true&fields=${encodeURIComponent(FIELDS)}`;
+      const current = await session.request(url, { headers: keyHeaders(meta), signal });
+      if (!current.ok) {
+        throw statusError(current, 'Drive tags');
+      }
+      const file = await jsonOf<DriveFile>(current);
+      const before = tagsOf(file);
+      const after = applyTagChange(before, { add, remove }); // checks the limit
+      const patch: Record<string, string | null> = {};
+      for (const tag of before.filter((t) => !after.includes(t))) {
+        patch[tagKey(tag)] = null;
+      }
+      for (const tag of after.filter((t) => !before.includes(t))) {
+        patch[tagKey(tag)] = '1';
+      }
+      if (Object.keys(patch).length === 0) {
+        return { ...toMeta(file, 'token'), source: meta.source };
+      }
+      const res = await session.request(url, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json', ...keyHeaders(meta) },
+        body: JSON.stringify({ appProperties: patch }),
+        signal,
+      });
+      if (!res.ok) {
+        throw statusError(res, 'Drive tags');
+      }
+      return { ...toMeta(await jsonOf<DriveFile>(res), 'token'), source: meta.source };
     },
 
     async share(meta) {
@@ -320,7 +454,7 @@ export function createDriveProvider(env: ProviderEnv, picker?: GooglePicker): Pr
       const headers: Record<string, string> = resourceKey
         ? { 'x-goog-drive-resource-keys': `${id}/${resourceKey}` }
         : {};
-      const url = `${api}/files/${id}?supportsAllDrives=true&fields=${FIELDS}`;
+      const url = `${api}/files/${id}?supportsAllDrives=true&fields=${encodeURIComponent(FIELDS)}`;
       if (cfg.apiKey) {
         const res = await send(env.fetch, `${url}&key=${encodeURIComponent(cfg.apiKey)}`, {
           headers,
@@ -362,9 +496,7 @@ export function createDriveProvider(env: ProviderEnv, picker?: GooglePicker): Pr
       if (meta.size !== undefined && meta.size > maxBytes) {
         throw new TooLargeError(meta.size, maxBytes);
       }
-      const headers: Record<string, string> = meta.source
-        ? { 'x-goog-drive-resource-keys': `${meta.key}/${meta.source}` }
-        : {};
+      const headers = keyHeaders(meta);
       const url = `${api}/files/${meta.key}?alt=media&supportsAllDrives=true`;
       const res =
         meta.access === 'anonymous'

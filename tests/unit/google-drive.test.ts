@@ -1,7 +1,13 @@
 // MIT License © 2026 Binary Dice Games
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { textToBase64Url } from '../../web/src/b64';
-import { AuthError, ConflictError, ProviderError, TooLargeError } from '../../web/src/errors';
+import {
+  AuthError,
+  ConflictError,
+  LinkError,
+  ProviderError,
+  TooLargeError,
+} from '../../web/src/errors';
 import { createDriveProvider } from '../../web/src/providers/google-drive';
 import type { GooglePicker } from '../../web/src/providers/google-picker';
 import type { Provider } from '../../web/src/providers/provider';
@@ -22,7 +28,7 @@ afterAll(() => fake.close());
 function picker(user: () => string, folder?: () => string): GooglePicker {
   return {
     async pick(request) {
-      const id = request.kind === 'folder' ? folder?.() : request.fileId;
+      const id = request.kind === 'folder' ? (request.folderId ?? folder?.()) : request.fileId;
       if (!id) {
         return null;
       }
@@ -268,5 +274,158 @@ describe('Google Drive links', () => {
     const { provider } = drive({ signedIn: false });
     await expect(provider.createFolder('x')).rejects.toMatchObject({ reason: 'needs_sign_in' });
     expect(new AuthError('cancelled')).toBeInstanceOf(Error);
+  });
+});
+
+describe('Google Drive tags', () => {
+  it('uploads with tags, lists them, and sets them together with the file', async () => {
+    const { provider } = drive({ user: 'tara' });
+    const folder = await provider.createFolder('tagged');
+    const meta = await provider.upload(folder, 'a.md', new Blob(['# a']), {
+      tags: ['Work', 'canción', 'work'],
+    });
+    expect(meta).toMatchObject({ tags: ['canción', 'work'], canEdit: true, ownedByMe: true });
+    expect(fake.tagsOf(meta.key)).toEqual(['canción', 'work']);
+    const listed = (await provider.list(folder)).items[0]!;
+    expect(listed.tags).toEqual(['canción', 'work']);
+    const big = new Uint8Array(6 * 1024 * 1024);
+    const resumable = await provider.upload(folder, 'big.bin', new Blob([big]), { tags: ['big'] });
+    expect(fake.tagsOf(resumable.key)).toEqual(['big']);
+  });
+
+  it('refuses invalid tags and more than 25 before uploading', async () => {
+    const { provider } = drive({ user: 'tara' });
+    const folder = await provider.createFolder('refused');
+    await expect(
+      provider.upload(folder, 'x.txt', new Blob(['x']), { tags: ['a:b'] }),
+    ).rejects.toMatchObject({ reason: 'invalid_tag' });
+    const many = Array.from({ length: 26 }, (_, i) => `t${i}`);
+    await expect(
+      provider.upload(folder, 'x.txt', new Blob(['x']), { tags: many }),
+    ).rejects.toMatchObject({ reason: 'too_many_tags' });
+    expect((await provider.list(folder)).items).toEqual([]);
+  });
+
+  it('adds and removes only the tags given, leaving other properties alone', async () => {
+    const { provider } = drive({ user: 'tara' });
+    const folder = await provider.createFolder('edits');
+    const meta = await provider.upload(folder, 'a.txt', new Blob(['a']), { tags: ['one'] });
+    fake.files.get(meta.key)!.appProperties.set('other', 'kept');
+    const after = await provider.setTags(meta, { add: ['two', 'Three'], remove: ['one'] });
+    expect(after.tags).toEqual(['three', 'two']);
+    expect(fake.files.get(meta.key)!.appProperties.get('other')).toBe('kept');
+    const same = await provider.setTags(after, { add: ['two'] });
+    expect(same.tags).toEqual(['three', 'two']);
+  });
+
+  it('merges edits made from two places at once', async () => {
+    const { provider: a } = drive({ user: 'tara' });
+    const { provider: b } = drive({ user: 'tara' });
+    const folder = await a.createFolder('merge');
+    const meta = await a.upload(folder, 'a.txt', new Blob(['a']));
+    await Promise.all([a.setTags(meta, { add: ['from-a'] }), b.setTags(meta, { add: ['from-b'] })]);
+    expect(fake.tagsOf(meta.key)).toEqual(['from-a', 'from-b']);
+  });
+
+  it('checks the limit against the file’s current tags', async () => {
+    const { provider } = drive({ user: 'tara' });
+    const folder = await provider.createFolder('limit');
+    const tags = Array.from({ length: 25 }, (_, i) => `t${i}`);
+    const meta = await provider.upload(folder, 'a.txt', new Blob(['a']), { tags: tags.slice(1) });
+    await provider.setTags(meta, { add: ['t0'] }); // 25, behind the stale `meta`'s back
+    await expect(provider.setTags(meta, { add: ['extra'] })).rejects.toMatchObject({
+      reason: 'too_many_tags',
+    });
+  });
+
+  it('drops stored keys that are not valid tags', async () => {
+    const id = fake.add({
+      name: 'odd.txt',
+      owner: 'tara',
+      createdByApp: true,
+      appProperties: { 't.QUJD': '1', 't.!!': '1', 't.d29yaw': '1' },
+    });
+    const { provider } = drive({ user: 'tara' });
+    const opened = await provider.openRef(textToBase64Url(id));
+    expect(opened.tags).toEqual(['work']); // "ABC" is not lower case; "!!" is not base64
+  });
+
+  it('lets writers edit tags of a shared paste and refuses readers', async () => {
+    const team = fake.add({
+      name: 'team-tags',
+      owner: 'uma',
+      folder: true,
+      members: ['vic'],
+      readers: ['wes'],
+    });
+    const { provider: owner } = drive({ user: 'uma' });
+    fake.grant('uma', team);
+    const meta = await owner.upload({ id: team, name: 'team-tags' }, 'p.txt', new Blob(['p']), {
+      tags: ['draft'],
+    });
+    for (const user of ['vic', 'wes']) {
+      fake.grant(user, team);
+    }
+    const { provider: vic } = drive({ user: 'vic' });
+    const seen = (await vic.list({ id: team, name: 'team-tags' })).items[0]!;
+    expect(seen).toMatchObject({ tags: ['draft'], canEdit: true, ownedByMe: false });
+    expect((await vic.setTags(seen, { add: ['reviewed'] })).tags).toEqual(['draft', 'reviewed']);
+
+    const { provider: wes } = drive({ user: 'wes' });
+    const read = (await wes.list({ id: team, name: 'team-tags' })).items[0]!;
+    expect(read).toMatchObject({ tags: ['draft', 'reviewed'], canEdit: false });
+    await expect(wes.setTags(read, { add: ['nope'] })).rejects.toMatchObject({
+      reason: 'forbidden',
+    });
+    expect(fake.tagsOf(meta.key)).toEqual(['draft', 'reviewed']);
+  });
+
+  it('marks anonymously opened pastes as not editable', async () => {
+    const { provider: owner } = drive({ user: 'uma' });
+    const folder = await owner.createFolder('open');
+    fake.files.get(folder.id)!.anyone = true;
+    const meta = await owner.upload(folder, 'o.txt', new Blob(['o']), { tags: ['pub'] });
+    const opened = await drive({ signedIn: false }).provider.openRef(
+      await owner.share(meta, 'public'),
+    );
+    expect(opened).toMatchObject({ access: 'anonymous', canEdit: false, ownedByMe: false });
+  });
+});
+
+describe('Google Drive shared folders and bin links', () => {
+  it('describes a folder: owner, ownership and the right to add', async () => {
+    const theirs = fake.add({
+      name: 'theirs',
+      owner: 'xena',
+      folder: true,
+      members: ['yuri'],
+      readers: ['zoe'],
+    });
+    const { provider: yuri } = drive({ user: 'yuri', folder: () => theirs });
+    await expect(yuri.describeFolder!({ id: theirs, name: '' })).rejects.toMatchObject({
+      reason: 'needs_grant',
+    });
+    expect(await yuri.pickFolder!({ shared: true })).toEqual({ id: theirs, name: 'theirs' });
+    expect(await yuri.describeFolder!({ id: theirs, name: '' })).toEqual({
+      name: 'theirs',
+      owner: { name: 'Xena', email: 'xena@example.com' },
+      ownedByMe: false,
+      canAdd: true,
+    });
+    const { provider: zoe } = drive({ user: 'zoe' });
+    expect(await zoe.pickFolder!({ folderId: theirs })).toEqual({ id: theirs, name: 'theirs' });
+    expect(await zoe.describeFolder!({ id: theirs, name: '' })).toMatchObject({ canAdd: false });
+    const { provider: xena } = drive({ user: 'xena' });
+    fake.grant('xena', theirs);
+    expect(await xena.describeFolder!({ id: theirs, name: '' })).toMatchObject({ ownedByMe: true });
+  });
+
+  it('encodes and decodes folder references', () => {
+    const { provider } = drive();
+    const ref = provider.refOfFolder!({ id: 'abc_DEF-1', name: 'x' });
+    expect(provider.folderRef!(ref)).toEqual({ id: 'abc_DEF-1', name: '' });
+    expect(() => provider.folderRef!('!!')).toThrow(LinkError);
+    expect(() => provider.folderRef!(textToBase64Url('../x'))).toThrow(LinkError);
+    expect(provider.capabilities).toEqual({ tags: true, binLinks: true });
   });
 });

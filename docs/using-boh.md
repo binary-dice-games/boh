@@ -50,6 +50,64 @@ images, audio, video and PDF. **Show as** switches between text views (e.g.
 Markdown source). Pictures and styles linked from inside a paste load only
 after **Load remote content**. **Download** saves the file.
 
+## Tags
+
+Tags label pastes so you can find them later. They are kept on the paste's
+file in Google Drive, so everyone who can open the paste sees the same tags in
+boh (they do not show in Drive's own app). Dropbox and OneDrive pastes have no
+tags yet.
+
+- **When uploading**: type tags in **Tags** and press Enter or a comma. The
+  bin's default tags and your tag rules' tags are already filled in; remove any
+  you do not want.
+- **In the viewer**: add or remove tags under the toolbar. If the owner shared
+  the folder with you read-only, you see the tags but cannot change them.
+- A tag has letters (any language), digits, `-`, `_`, `.` or `/`; spaces become
+  `-` and capitals become lower case. A paste has at most 25 tags.
+
+boh also shows **automatic tags** for every paste, worked out from its name
+and type: `format:md`, `kind:image`, `lang:python`. They cannot be edited.
+
+**Tag rules** (Library, **Tag rules…**) add tags to new pastes: for example
+"files named `*.log` get `logs`", "format `json` gets `data`", or "every paste
+in bin Notes gets `notes`". A bin's **Default tags** (in its Edit dialog) do the
+same for one bin. Rules never remove tags.
+
+## Library and search
+
+**Library** lists the pastes of all your bins, your own and those shared with
+you. Click a tag, type or bin on the left to filter, and **All / Mine / Shared
+with me** to choose whose pastes. The search box takes:
+
+| You type | Finds pastes |
+|---|---|
+| `notes` | tagged `notes`, or with `notes` in the name |
+| `#notes`, `tag:a,b` | tagged `notes`; tagged `a` or `b` |
+| `-#draft` | not tagged `draft` (`-` turns any term around) |
+| `format:md,txt`, `kind:image`, `lang:go` | by automatic tag |
+| `bin:"Work notes"`, `from:me`, `from:others` | in that bin; in your own or shared bins |
+| `untagged` | without tags |
+| `"big plan"` | with that phrase in the name |
+
+All terms must match. The address keeps the search, so you can bookmark it.
+Select pastes (or all that match) to **Add tags**, **Remove tags**, **Rename
+tag** or **Apply rules** to all of them; pastes you may not change are skipped.
+
+The library is kept in this browser to show quickly; **Refresh** lists the bins
+again. Disconnecting an account deletes it.
+
+## Shared bins and bin links
+
+To use a folder someone shared with you, press **Add bin**, then **Choose a
+folder shared with me**. Or ask the owner for its **bin link** (in the bin's
+page, **Copy bin link**): opening it asks you to sign in and confirm the folder
+in Google's picker, shows its pastes, and **Add to my bins** adds it. A bin
+link gives nobody access: it works only for people the folder is already
+shared with.
+
+Google Drive may let boh see only the pastes of a shared folder that you opened
+or added yourself; open the others from their links.
+
 ## Bins and recent pastes
 
 Click a bin to list its pastes, copy their links, open them in the service, or

@@ -1,6 +1,7 @@
 // MIT License © 2026 Binary Dice Games
 /** @file What every view gets from the app. */
 import type { BinEntry, BinStore } from '../bin-store';
+import type { LibraryBin, LibraryIndex } from '../library-index';
 import type { LocalState } from '../local-state';
 import type { PasteMeta, Provider, ProviderId, Sharing, Visibility } from '../providers/provider';
 
@@ -9,6 +10,8 @@ export interface AppContext {
   readonly providers: Record<ProviderId, Provider>;
   readonly store: BinStore;
   readonly local: LocalState;
+  /** The pastes of the bins the library shows, with their tags. */
+  readonly library: LibraryIndex;
   /** The site's address, without query or fragment. */
   readonly siteUrl: string;
   /**
@@ -26,6 +29,10 @@ export interface AppContext {
   sharing(entry: BinEntry): Promise<Sharing>;
   /** The boh link of a paste in a bin of `visibility` (made once per paste and page load). */
   linkFor(meta: PasteMeta, visibility: Visibility): Promise<string>;
+  /** The bins of the connected accounts, as the library lists them. */
+  libraryBins(): LibraryBin[];
+  /** The bin link of a bin, when its provider has them. */
+  binLink(entry: BinEntry): string | undefined;
 }
 
 /** A view: draws into `root`, returns its cleanup. */

@@ -24,3 +24,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   content in a paste loads only on request.
 - Recent pastes of this browser.
 - Privacy policy and third-party licenses pages.
+- Tags on Google Drive pastes: add and remove them when uploading, in the
+  viewer, and in bulk from the library; everyone who can open a paste sees them.
+- Automatic tags: `format:`, `kind:` and `lang:` tags from each paste's name
+  and type, bin default tags, and tag rules (by bin, format, kind or name
+  pattern) that preselect tags at upload or are applied to existing pastes.
+- Library (`#library`): all pastes of your own and shared bins, with search by
+  name and tag (`#tag`, `-#tag`, `format:md`, `bin:`, `from:others`, ...), tag
+  facets with counts, and bulk add, remove, rename and apply-rules.
+- Shared bins: add a Google Drive folder someone shared with you, or open a
+  bin link (`#v1/bin/gd/<ref>`) its owner sent; readers see tags, writers can
+  edit them.

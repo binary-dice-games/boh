@@ -188,6 +188,7 @@ export function createDropboxProvider(env: ProviderEnv): Provider {
     label: 'Dropbox',
     configured: Boolean(cfg.appKey),
     maxUploadBytes: 150 * 1024 * 1024,
+    capabilities: { tags: false, binLinks: false },
 
     async signIn({ stay, signal }) {
       if (!cfg.appKey) {
@@ -355,7 +356,10 @@ export function createDropboxProvider(env: ProviderEnv): Provider {
       return { items, cursor: page.has_more ? page.cursor : undefined };
     },
 
-    async upload(folder, name, blob) {
+    async upload(folder, name, blob, options) {
+      if (options?.tags?.length) {
+        throw new ProviderError('unsupported', 'boh cannot keep tags in Dropbox yet');
+      }
       const dir = (await rpc<Entry>('files/get_metadata', { path: folder.id })).path_display ?? '';
       const res = await uploadTo(
         { path: `${dir}/${name}`, mode: 'add', autorename: true, mute: true },
@@ -411,6 +415,12 @@ export function createDropboxProvider(env: ProviderEnv): Provider {
         throw new ProviderError('unsupported', 'Dropbox refused a public link for this file', 409);
       }
       throw new ProviderError(/access_denied/.test(summary) ? 'forbidden' : 'failed', summary, 409);
+    },
+
+    setTags() {
+      return Promise.reject(
+        new ProviderError('unsupported', 'boh cannot keep tags in Dropbox yet'),
+      );
     },
 
     async remove(meta) {

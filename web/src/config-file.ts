@@ -6,6 +6,7 @@
 import { BohError } from './errors';
 import { randomString } from './pkce';
 import { VISIBILITIES, type FolderRef, type Visibility } from './providers/provider';
+import { isTagRule, type TagRule } from './tags';
 
 /** A registered folder. */
 export interface Bin {
@@ -15,7 +16,19 @@ export interface Bin {
   visibility: Visibility;
   /** Extension preselected for new text pastes. */
   defaultFormat?: string;
+  /** A folder someone else owns and shared with the user. */
+  shared?: boolean;
+  /** The owner of a shared folder, as the provider reported it when the bin was added. */
+  owner?: BinOwner;
+  /** Manual tags preselected for new pastes in this bin. */
+  defaultTags?: string[];
   [extra: string]: unknown;
+}
+
+/** Who owns a shared bin's folder (display only). */
+export interface BinOwner {
+  name: string;
+  email?: string;
 }
 
 /** The file's contents. */
@@ -24,6 +37,8 @@ export interface ConfigFile {
   version: 1;
   bins: Bin[];
   defaultBin: string | null;
+  /** Tag rules of this account (spec/02_tags_and_shared_bins/DESIGN.md section 3.3). */
+  rules?: TagRule[];
   [extra: string]: unknown;
 }
 
@@ -35,7 +50,7 @@ export function emptyConfig(): ConfigFile {
   return { format: 'boh-config', version: 1, bins: [], defaultBin: null };
 }
 
-/** A new random bin id. */
+/** A new random id for a bin or a tag rule. */
 export function newBinId(): string {
   return randomString(9);
 }
@@ -54,6 +69,11 @@ function isFolder(v: unknown): v is FolderRef {
   );
 }
 
+const isOwner = (v: unknown): v is BinOwner =>
+  isObject(v) &&
+  typeof v.name === 'string' &&
+  (v.email === undefined || typeof v.email === 'string');
+
 function isBin(v: unknown): v is Bin {
   return (
     isObject(v) &&
@@ -62,7 +82,11 @@ function isBin(v: unknown): v is Bin {
     typeof v.name === 'string' &&
     isFolder(v.folder) &&
     (VISIBILITIES as readonly unknown[]).includes(v.visibility) &&
-    (v.defaultFormat === undefined || typeof v.defaultFormat === 'string')
+    (v.defaultFormat === undefined || typeof v.defaultFormat === 'string') &&
+    (v.shared === undefined || typeof v.shared === 'boolean') &&
+    (v.owner === undefined || isOwner(v.owner)) &&
+    (v.defaultTags === undefined ||
+      (Array.isArray(v.defaultTags) && v.defaultTags.every((t) => typeof t === 'string')))
   );
 }
 
@@ -90,6 +114,9 @@ export function parseConfig(text: string): ConfigFile {
   const ids = new Set(data.bins.map((b) => b.id));
   if (ids.size !== data.bins.length) {
     throw new ConfigFileError('bad_config', 'the settings file has two bins with the same id');
+  }
+  if (data.rules !== undefined && !(Array.isArray(data.rules) && data.rules.every(isTagRule))) {
+    throw new ConfigFileError('bad_config', 'the settings file has a damaged list of tag rules');
   }
   const defaultBin =
     typeof data.defaultBin === 'string' && ids.has(data.defaultBin) ? data.defaultBin : null;

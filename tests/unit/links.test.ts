@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import { base64UrlToText, textToBase64Url } from '../../web/src/b64';
 import { LinkError } from '../../web/src/errors';
-import { formatLink, linkFragment, parseFragment } from '../../web/src/links';
+import { formatBinLink, formatLink, linkFragment, parseFragment } from '../../web/src/links';
 
 describe('boh links', () => {
   it('formats and parses a link round trip', () => {
@@ -34,6 +34,42 @@ describe('boh links', () => {
 
   it('recognizes links of a later version', () => {
     expect(parseFragment('#v2/gd/abc')).toEqual({ kind: 'newer', version: 2 });
+  });
+
+  it('formats and parses a bin link round trip', () => {
+    const link = formatBinLink('https://example.github.io/boh/#x', {
+      provider: 'gd',
+      ref: 'Zm9sZGVy',
+      name: 'Team notes',
+    });
+    expect(link).toBe('https://example.github.io/boh/#v1/bin/gd/Zm9sZGVy?n=Team+notes');
+    expect(parseFragment(new URL(link).hash)).toEqual({
+      kind: 'bin',
+      link: { provider: 'gd', ref: 'Zm9sZGVy', name: 'Team notes' },
+    });
+    expect(parseFragment('#v1/bin/gd/abc')).toEqual({
+      kind: 'bin',
+      link: { provider: 'gd', ref: 'abc' },
+    });
+  });
+
+  it('keeps paste links unchanged next to bin links', () => {
+    expect(parseFragment('#v1/gd/abc?n=x')).toEqual({
+      kind: 'paste',
+      link: { provider: 'gd', ref: 'abc', name: 'x' },
+    });
+  });
+
+  it.each([
+    ['#v1/bin/gd', 'bin link'],
+    ['#v1/bin/gd/abc/def', 'bin link'],
+    ['#v1/bin/xx/abc', 'unknown provider'],
+    ['#v1/bin/gd/a+b', 'reference'],
+    ['#v1/bin/gd/abc?r=text', 'parameter'],
+    ['#v1/bin/gd/abc?n=', 'name'],
+  ])('rejects the bin link %s', (fragment, message) => {
+    expect(() => parseFragment(fragment)).toThrow(LinkError);
+    expect(() => parseFragment(fragment)).toThrow(message);
   });
 
   it.each([

@@ -5,6 +5,7 @@ import { emptyConfig, parseConfig, serializeConfig, type Bin } from '../../web/s
 import { ConflictError, ProviderError } from '../../web/src/errors';
 import type { Provider } from '../../web/src/providers/provider';
 import { MemoryStore, SafeStore } from '../../web/src/storage';
+import type { TagRule } from '../../web/src/tags';
 
 /** A provider that only has a configuration file, which tests can change behind boh's back. */
 class ConfigOnly {
@@ -151,7 +152,91 @@ describe('BinStore', () => {
   });
 });
 
+describe('BinStore tag rules and shared bins', () => {
+  const rule = (id: string, bins: string[]): TagRule => ({
+    id,
+    bins,
+    match: { format: ['log'] },
+    tags: ['logs'],
+  });
+
+  it('adds, updates and removes rules, kept in the settings file', async () => {
+    const { fake, store } = setup();
+    await store.addBin('gd', bin('a'));
+    await store.addRule('gd', rule('r1', []));
+    await store.addRule('gd', rule('r2', ['a']));
+    await store.updateRule('gd', { ...rule('r2', ['a']), tags: ['changed'] });
+    expect(store.rules('gd').map((r) => [r.id, r.tags])).toEqual([
+      ['r1', ['logs']],
+      ['r2', ['changed']],
+    ]);
+    await store.removeRule('gd', 'r1');
+    expect(parseConfig(fake.text!).rules?.map((r) => r.id)).toEqual(['r2']);
+  });
+
+  it('prunes a removed bin from rules, dropping rules left with no bin', async () => {
+    const { store } = setup();
+    await store.addBin('gd', bin('a'));
+    await store.addBin('gd', bin('b'));
+    await store.addRule('gd', rule('only-a', ['a']));
+    await store.addRule('gd', rule('a-and-b', ['a', 'b']));
+    await store.addRule('gd', rule('every', []));
+    await store.removeBin('a');
+    expect(store.rules('gd').map((r) => [r.id, r.bins])).toEqual([
+      ['a-and-b', ['b']],
+      ['every', []],
+    ]);
+  });
+
+  it('keeps shared bins, their owner and default tags; finds a bin by folder', async () => {
+    const { fake, store } = setup();
+    const shared: Bin = {
+      ...bin('s', 'Theirs'),
+      shared: true,
+      owner: { name: 'Xena', email: 'x@example.com' },
+      defaultTags: ['team'],
+    };
+    await store.addBin('gd', shared);
+    await store.updateBin('s', { defaultTags: ['team', 'more'] });
+    expect(parseConfig(fake.text!).bins[0]).toEqual({ ...shared, defaultTags: ['team', 'more'] });
+    expect(store.findFolder('gd', 'f-s')?.bin.id).toBe('s');
+    expect(store.findFolder('gd', 'nope')).toBeUndefined();
+  });
+
+  it('writes a file the 01 parser still reads (version 1, additions as plain fields)', async () => {
+    const { fake, store } = setup();
+    await store.addBin('gd', { ...bin('a'), shared: true, defaultTags: ['x'] });
+    await store.addRule('gd', rule('r', []));
+    const raw = JSON.parse(fake.text!) as { version: number };
+    expect(raw.version).toBe(1);
+    expect(parseConfig(fake.text!).bins).toHaveLength(1);
+  });
+
+  it('retries a rule change after a conflict', async () => {
+    const { fake, store } = setup();
+    await store.addBin('gd', bin('a'));
+    fake.beforeWrite = () => {
+      fake.beforeWrite = undefined;
+      fake.external((bins) => bins.push(bin('other')));
+    };
+    await store.addRule('gd', rule('r', []));
+    expect(parseConfig(fake.text!).bins.map((b) => b.id)).toEqual(['a', 'other']);
+    expect(store.rules('gd').map((r) => r.id)).toEqual(['r']);
+  });
+});
+
 describe('config file', () => {
+  it('rejects damaged rules and bin fields', () => {
+    const base = { format: 'boh-config', version: 1, defaultBin: null };
+    const parse = (extra: object) => () => parseConfig(JSON.stringify({ ...base, ...extra }));
+    expect(parse({ bins: [], rules: [{ id: 'r' }] })).toThrow('tag rules');
+    expect(parse({ bins: [], rules: 'x' })).toThrow('tag rules');
+    expect(parse({ bins: [{ ...bin('a'), shared: 'yes' }] })).toThrow('bins');
+    expect(parse({ bins: [{ ...bin('a'), owner: { email: 'x' } }] })).toThrow('bins');
+    expect(parse({ bins: [{ ...bin('a'), defaultTags: [1] }] })).toThrow('bins');
+    expect(parse({ bins: [] })).not.toThrow();
+  });
+
   it.each([
     ['not json', '{', 'bad_config'],
     ['another format', '{"format":"x","version":1,"bins":[]}', 'bad_config'],

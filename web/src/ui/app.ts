@@ -1,11 +1,13 @@
 // MIT License © 2026 Binary Dice Games
 /**
  * @file The app shell: the header with the accounts, the status line, and the router. Routes are
- * fragments: `#v1/...` is a paste link (the viewer), `#bin/<id>` a bin, anything else the home.
+ * fragments: `#v1/...` is a paste link (the viewer), `#v1/bin/...` a bin link, `#bin/<id>` a bin,
+ * `#library[?q=<query>]` the library, anything else the home.
  */
 import type { BinEntry, BinStore } from '../bin-store';
 import { AuthError, LinkError } from '../errors';
-import { formatLink, parseFragment } from '../links';
+import type { LibraryBin, LibraryIndex } from '../library-index';
+import { formatBinLink, formatLink, parseFragment } from '../links';
 import type { LocalState } from '../local-state';
 import {
   PROVIDER_IDS,
@@ -16,10 +18,12 @@ import {
   type Sharing,
   type Visibility,
 } from '../providers/provider';
+import { binLinkView } from './bin-link';
 import { binView } from './bin-view';
 import type { AppContext, View } from './context';
 import { button, h } from './dom';
 import { homeView } from './home';
+import { libraryView, queryOfHash } from './library';
 import { errorText } from './messages';
 import { viewerView } from './viewer';
 
@@ -37,6 +41,7 @@ export class App implements AppContext {
     readonly providers: Record<ProviderId, Provider>,
     readonly store: BinStore,
     readonly local: LocalState,
+    readonly library: LibraryIndex,
     readonly siteUrl: string,
     private readonly root: HTMLElement,
   ) {}
@@ -82,6 +87,7 @@ export class App implements AppContext {
 
   async disconnect(id: ProviderId): Promise<void> {
     this.store.forget(id);
+    await this.library.forget(id);
     await this.providers[id].signOut();
     this.sharingCache.clear();
     this.linkCache.clear();
@@ -123,6 +129,25 @@ export class App implements AppContext {
       this.linkCache.set(key, found);
     }
     return found;
+  }
+
+  libraryBins(): LibraryBin[] {
+    return this.store.bins().flatMap((e) => {
+      const account = this.providers[e.provider].account();
+      return account ? [{ provider: e.provider, accountId: account.id, bin: e.bin }] : [];
+    });
+  }
+
+  binLink(entry: BinEntry): string | undefined {
+    const provider = this.providers[entry.provider];
+    if (!provider.capabilities.binLinks || !provider.refOfFolder) {
+      return undefined;
+    }
+    return formatBinLink(this.siteUrl, {
+      provider: entry.provider,
+      ref: provider.refOfFolder(entry.bin.folder),
+      name: entry.bin.name,
+    });
   }
 
   private drawHeader(): void {
@@ -171,6 +196,7 @@ export class App implements AppContext {
     this.header.replaceChildren(
       h('a', { class: 'logo', href: '#', text: 'boh' }),
       h('span', { class: 'tagline', text: 'bin of holding' }),
+      h('a', { class: 'nav', id: 'nav-library', href: '#library', text: 'Library' }),
       accounts,
       h('label', { class: 'stay' }, stay, ' Stay signed in on this browser'),
     );
@@ -185,6 +211,8 @@ export class App implements AppContext {
       const parsed = parseFragment(hash);
       if (parsed.kind === 'paste') {
         view = (ctx, root) => viewerView(ctx, root, parsed.link, location.href);
+      } else if (parsed.kind === 'bin') {
+        view = (ctx, root) => binLinkView(ctx, root, parsed.link);
       } else if (parsed.kind === 'newer') {
         view = (_ctx, root) => {
           root.append(
@@ -195,6 +223,8 @@ export class App implements AppContext {
           );
           return () => undefined;
         };
+      } else if (hash === '#library' || hash.startsWith('#library?')) {
+        view = (ctx, root) => libraryView(ctx, root, queryOfHash(hash));
       } else if (hash.startsWith('#bin/')) {
         const id = decodeURIComponent(hash.slice(5));
         view = (ctx, root) => binView(ctx, root, id);

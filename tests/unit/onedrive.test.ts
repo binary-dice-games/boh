@@ -95,6 +95,18 @@ describe('OneDrive bins and pastes', () => {
     await expect(provider.createFolder('Pastes', workRef)).rejects.toMatchObject({ status: 409 });
   });
 
+  it('has no tag storage: refuses tag writes', async () => {
+    const { provider } = onedrive({ user: 'dave' });
+    expect(provider.capabilities).toEqual({ tags: false, binLinks: false });
+    const team = (await provider.listFolders!(null)).find((f) => f.name === 'Team')!;
+    await expect(
+      provider.upload(team, 'x.txt', new Blob(['x']), { tags: ['a'] }),
+    ).rejects.toMatchObject({ reason: 'unsupported' });
+    await expect(
+      provider.setTags({ provider: 'od', key: 'k', name: 'x.txt' }, { add: ['a'] }),
+    ).rejects.toMatchObject({ reason: 'unsupported' });
+  });
+
   it('uploads into a folder shared by someone else, renaming on a clash', async () => {
     const { provider } = onedrive({ user: 'dave' });
     const team = (await provider.listFolders!(null)).find((f) => f.name === 'Team')!;

@@ -63,6 +63,11 @@ export class FakeServer {
     this.failures.push({ status, count, match, headers });
   }
 
+  /** Drops every injected failure not used up yet. */
+  clearFailures(): void {
+    this.failures.length = 0;
+  }
+
   /** Starts listening on a free loopback port. */
   async start(): Promise<string> {
     this.server = createServer((req, res) => {
