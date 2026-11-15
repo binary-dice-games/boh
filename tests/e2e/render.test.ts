@@ -118,6 +118,43 @@ describe('the render frame', () => {
     ).toBe('blocked');
   });
 
+  it('does nothing when opened outside the sandbox', async () => {
+    const page = (await app.open()).page;
+    await page.goto(new URL('render.html', app.url).href);
+    await page.locator('body', { hasText: 'This page only works inside boh.' }).waitFor();
+    // Messages arrive in order: the frame's own listener has seen the request (and any answer it
+    // posted has arrived) by the time the marker posted after it comes back.
+    const answers = await page.evaluate(
+      () =>
+        new Promise<string[]>((resolve) => {
+          const seen: string[] = [];
+          window.addEventListener('message', (e) => {
+            const type = String((e.data as { type?: string })?.type);
+            if (type === 'render') {
+              window.postMessage({ type: 'marker' }, '*');
+            } else if (type === 'marker') {
+              resolve(seen);
+            } else {
+              seen.push(type);
+            }
+          });
+          const bytes = new TextEncoder().encode('# x').buffer;
+          const options = { remote: false, wrap: false, highlight: false, language: '' };
+          const request = {
+            type: 'render',
+            id: 1,
+            renderer: 'markdown',
+            name: 'x',
+            bytes,
+            options,
+          };
+          window.postMessage(request, '*');
+        }),
+    );
+    expect(answers).toEqual([]);
+    expect(await page.locator('iframe').count()).toBe(0);
+  });
+
   it('highlights Markdown code blocks and shows the source on request', async () => {
     const viewer = await openPaste(
       'code.md',

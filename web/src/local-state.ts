@@ -18,7 +18,7 @@ export interface RecentPaste {
 
 /** Display and sign-in preferences. */
 export interface Prefs {
-  /** Keep sign-ins in `localStorage`. */
+  /** Keep sign-ins in `localStorage`; off unless the user ticks "Stay signed in". */
   stay: boolean;
   /** The bin last uploaded to. */
   lastBin?: string;
@@ -75,14 +75,18 @@ export class LocalState {
   prefs(): Prefs {
     const stored = this.store.getJson<Partial<Prefs>>(PREFS) ?? {};
     return {
-      stay: typeof stored.stay === 'boolean' ? stored.stay : true,
+      stay: typeof stored.stay === 'boolean' ? stored.stay : false,
       wrap: typeof stored.wrap === 'boolean' ? stored.wrap : false,
       lastBin: typeof stored.lastBin === 'string' ? stored.lastBin : undefined,
     };
   }
 
-  /** Changes some preferences. */
+  /** Changes some preferences; only what was set is stored, so defaults are never written. */
   setPrefs(patch: Partial<Prefs>): void {
-    this.store.setJson(PREFS, { ...this.prefs(), ...patch });
+    const stored = this.store.getJson<Partial<Prefs>>(PREFS);
+    this.store.setJson(PREFS, {
+      ...(stored && typeof stored === 'object' ? stored : {}),
+      ...patch,
+    });
   }
 }

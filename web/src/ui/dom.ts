@@ -53,9 +53,31 @@ export function button(
   return h('button', { type: 'button', ...props, text: label, on: { click: onClick } });
 }
 
-/** A link that opens outside boh. */
+/**
+ * Whether `href` is an absolute `https:` or `http:` address, the only kind boh links to outside
+ * itself (addresses come from the services' answers and from links people send).
+ */
+export function isWebUrl(href: string): boolean {
+  try {
+    const { protocol } = new URL(href);
+    return protocol === 'https:' || protocol === 'http:';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * A link that opens outside boh. An address that is not `https:` or `http:` (`javascript:`,
+ * `data:`, ...) gives a link without a target.
+ */
 export function external(label: string, href: string, props: Props = {}): HTMLAnchorElement {
-  return h('a', { href, target: '_blank', rel: 'noopener noreferrer', ...props, text: label });
+  return h('a', {
+    href: isWebUrl(href) ? href : undefined,
+    target: '_blank',
+    rel: 'noopener noreferrer',
+    ...props,
+    text: label,
+  });
 }
 
 /** A labelled form field: `<label>text <control></label>`. */

@@ -7,3 +7,5 @@ dist/
 *.tsbuildinfo
 /web/dist/
 /site/
+.env
+.env.*

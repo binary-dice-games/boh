@@ -139,10 +139,25 @@ describe('boh with Google Drive', () => {
     expect(alice.errors).toEqual([]);
   });
 
+  it('keeps the sign-in in this tab only unless asked to stay signed in', async () => {
+    fake.nextUser = 'alice';
+    const alice = await app.open();
+    expect(await alice.page.isChecked('label.stay input')).toBe(false);
+    await connect(alice, 'gd', 'Alice');
+    const where = () =>
+      alice.page.evaluate(() => ({
+        local: localStorage.getItem('boh.auth.gd') !== null,
+        session: sessionStorage.getItem('boh.auth.gd') !== null,
+      }));
+    expect(await where()).toEqual({ local: false, session: true });
+    await alice.page.check('label.stay input');
+    expect(await where()).toEqual({ local: true, session: false });
+  });
+
   it('opens the bin view from a fresh tab once the bins are loaded', async () => {
     fake.nextUser = 'alice';
     const alice = await app.open();
-    await connect(alice, 'gd', 'Alice');
+    await connect(alice, 'gd', 'Alice', { stay: true });
     const id = await alice.page.locator('.bin').first().getAttribute('data-bin');
     const tab = await alice.context.newPage();
     await tab.goto(`${app.url}#bin/${id}`);

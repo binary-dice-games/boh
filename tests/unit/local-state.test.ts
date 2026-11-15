@@ -38,9 +38,19 @@ describe('LocalState', () => {
     store.setItem('boh.prefs', '{broken');
     const state = new LocalState(store);
     expect(state.recent()).toEqual([]);
-    expect(state.prefs()).toEqual({ stay: true, wrap: false, lastBin: undefined });
+    expect(state.prefs()).toEqual({ stay: false, wrap: false, lastBin: undefined });
     state.setPrefs({ wrap: true, lastBin: 'b' });
-    expect(state.prefs()).toEqual({ stay: true, wrap: true, lastBin: 'b' });
+    expect(state.prefs()).toEqual({ stay: false, wrap: true, lastBin: 'b' });
+  });
+
+  it('keeps sign-ins out of local storage unless the user asks', () => {
+    const store = fresh();
+    const state = new LocalState(store);
+    expect(state.prefs().stay).toBe(false);
+    state.setPrefs({ wrap: true });
+    expect(store.getJson<Record<string, unknown>>('boh.prefs')).toEqual({ wrap: true });
+    state.setPrefs({ stay: true });
+    expect(state.prefs()).toMatchObject({ stay: true, wrap: true });
   });
 });
 

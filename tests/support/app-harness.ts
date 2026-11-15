@@ -132,12 +132,19 @@ export async function startHarness(fakes: {
   };
 }
 
-/** Clicks the connect button of `provider` and waits until the header shows the account. */
+/**
+ * Clicks the connect button of `provider` and waits until the header shows the account. `stay`
+ * ticks "Stay signed in" first, so other tabs of the context share the sign-in.
+ */
 export async function connect(
   app: AppPage,
   provider: 'gd' | 'db' | 'od',
   name: string,
+  { stay = false }: { stay?: boolean } = {},
 ): Promise<void> {
+  if (stay) {
+    await app.page.check('label.stay input');
+  }
   await app.page.click(`button.connect[data-provider="${provider}"]`);
   await app.page.locator(`.account[data-provider="${provider}"] .who`, { hasText: name }).waitFor();
 }

@@ -170,7 +170,17 @@ function post(message: FrameMessage): void {
   parent.postMessage(message, '*');
 }
 
+/**
+ * Whether this page runs as the app loads it: in a sandbox, with an opaque origin. Opened any
+ * other way (directly, or framed by another site) it would run with boh's origin, so it does
+ * nothing.
+ */
+const sandboxed = self.origin === 'null';
+
 window.addEventListener('message', (event: MessageEvent<RenderRequest>) => {
+  if (!sandboxed) {
+    return;
+  }
   if (event.source !== parent || event.data?.type !== 'render') {
     return;
   }
@@ -184,4 +194,8 @@ window.addEventListener('message', (event: MessageEvent<RenderRequest>) => {
   }
 });
 
-post({ type: 'ready' });
+if (sandboxed) {
+  post({ type: 'ready' });
+} else {
+  document.body.textContent = 'This page only works inside boh.';
+}

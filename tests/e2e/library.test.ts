@@ -28,7 +28,7 @@ beforeAll(async () => {
   });
   fake.nextUser = 'alice';
   alice = await app.open();
-  await connect(alice, 'gd', 'Alice');
+  await connect(alice, 'gd', 'Alice', { stay: true });
 }, 120000);
 
 afterAll(async () => {
