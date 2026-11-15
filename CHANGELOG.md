@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- The site is configured with the Binary Dice Games Google app, so Google
+  Drive sign-in works on the published site.
 - Project scaffolding: an empty page, the GitHub Pages site build and deploy.
 - Google Drive accounts: sign-in in a popup, optionally kept on the browser.
   Dropbox and OneDrive support is built but switched off on the site.
