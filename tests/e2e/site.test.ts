@@ -56,10 +56,12 @@ describe('the site in Chrome', () => {
     await page.close();
   });
 
-  it('offers no Dropbox or OneDrive, and refuses their links', async () => {
+  it('offers only Google Drive, and refuses Dropbox and OneDrive links', async () => {
     const page = await browser.newPage();
     await page.goto(url);
-    expect(await page.locator('button.connect').count()).toBe(0); // no client ids in this build
+    // Only Google Drive is enabled in web/boh.config.json.
+    await page.locator('button.connect[data-provider="gd"]').waitFor();
+    expect(await page.locator('button.connect').count()).toBe(1);
     for (const [code, label] of [
       ['db', 'Dropbox'],
       ['od', 'OneDrive'],
