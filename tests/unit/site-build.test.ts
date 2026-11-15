@@ -26,11 +26,12 @@ afterAll(() => {
 });
 
 describe('the Pages site', () => {
-  it('holds the pages, their scripts, the stylesheet, the privacy and 404 pages and .nojekyll', () => {
+  it('holds the pages, their scripts, the stylesheet, the icon, the privacy and 404 pages and .nojekyll', () => {
     for (const name of [
       'index.html',
       'main.js',
       'app.css',
+      'icon.png',
       'render.html',
       'render.js',
       'auth.html',

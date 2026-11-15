@@ -37,3 +37,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Shared bins: add a Google Drive folder someone shared with you, or open a
   bin link (`#v1/bin/gd/<ref>`) its owner sent; readers see tags, writers can
   edit them.
+- The boh icon beside the name at the top of the page and as the page's icon.

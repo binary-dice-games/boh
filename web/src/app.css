@@ -114,9 +114,17 @@ textarea {
   padding: 14px 0;
 }
 .logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   font-weight: 800;
   font-size: 1.5rem;
   text-decoration: none;
+}
+.logo img {
+  display: block;
+  width: 32px;
+  height: 32px;
 }
 .tagline {
   color: var(--muted);

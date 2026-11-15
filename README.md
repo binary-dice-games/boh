@@ -49,6 +49,7 @@ Needs Node.js 20+; the browser tests need Chrome. See
 | `web/boh.config.json` | Enabled providers and the public client ids of their apps |
 | `web/src/` | The app (`index.html`, `main.ts`) and its core modules |
 | `web/src/providers/` | Google Drive (on), Dropbox and OneDrive (off) behind one `Provider` contract |
+| `web/src/assets/` | Images the page uses (the icon), copied into the build |
 | `web/src/render/` | The sandboxed render frame (`render.html`) |
 | `web/src/ui/` | The app's views |
 | `web/src/site/` | Static pages of the site: privacy policy, 404 |
@@ -57,7 +58,7 @@ Needs Node.js 20+; the browser tests need Chrome. See
 | `cmake/` | CMake modules |
 | `docs/` | Documentation |
 | `spec/` | Design and plan documents, one folder per project |
-| `resources/` | Project assets (the logo) |
+| `resources/` | Project assets: the logo (`boh.png`) and its icon (`boh-icon.png`) |
 
 ## Further Documentation
 
