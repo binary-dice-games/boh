@@ -34,6 +34,9 @@ export function buildVersion() {
   return commit ? `${version} (${commit})` : version;
 }
 
+/** Images the pages use (the icon), in `web/src/assets/`, copied next to the pages. */
+export const ASSET_FILES = ['icon.png'];
+
 /** The pages of the build: the HTML file, its script entry and its policy. */
 const PAGES = [
   { html: 'index.html', entry: 'main.ts', out: 'main', csp: appCsp },
@@ -43,7 +46,8 @@ const PAGES = [
 
 /**
  * Builds the pages (`index.html` + `main.js`, the render frame `render.html` + `render.js`, the
- * sign-in redirect `auth.html` + `auth.js`) and the stylesheet `app.css`.
+ * sign-in redirect `auth.html` + `auth.js`), the stylesheet `app.css` and the images
+ * (`ASSET_FILES`).
  * @param {string} out directory to write into
  * @param {{config?: import('./config.mjs').ConfigOverrides}} [options] `config` overrides the
  *   committed configuration (the tests point the providers at loopback fakes)
@@ -80,6 +84,9 @@ export async function buildWeb(out, { config: overrides } = {}) {
     );
   }
   copyFileSync(join(src, 'app.css'), join(out, 'app.css'));
+  for (const name of ASSET_FILES) {
+    copyFileSync(join(src, 'assets', name), join(out, name));
+  }
   writeFileSync(join(out, 'third-party-licenses.txt'), thirdPartyLicenses());
 }
 

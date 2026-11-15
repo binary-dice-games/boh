@@ -43,6 +43,19 @@ describe('the site in Chrome', () => {
     await page.close();
   });
 
+  it('shows the icon beside the boh name and as the favicon', async () => {
+    const page = await browser.newPage();
+    await page.goto(url);
+    const logo = page.locator('.top .logo');
+    await expect(logo.textContent()).resolves.toBe('boh');
+    const icon = logo.locator('img');
+    await expect
+      .poll(() => icon.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth))
+      .toBeGreaterThan(0);
+    expect(await page.locator('link[rel="icon"]').getAttribute('href')).toBe('icon.png');
+    await page.close();
+  });
+
   it('offers no Dropbox or OneDrive, and refuses their links', async () => {
     const page = await browser.newPage();
     await page.goto(url);

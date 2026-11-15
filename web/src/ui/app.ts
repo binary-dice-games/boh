@@ -194,7 +194,12 @@ export class App implements AppContext {
       }
     });
     this.header.replaceChildren(
-      h('a', { class: 'logo', href: '#', text: 'boh' }),
+      h(
+        'a',
+        { class: 'logo', href: '#' },
+        h('img', { src: 'icon.png', alt: '', width: 32, height: 32 }),
+        'boh',
+      ),
       h('span', { class: 'tagline', text: 'bin of holding' }),
       h('a', { class: 'nav', id: 'nav-library', href: '#library', text: 'Library' }),
       accounts,
