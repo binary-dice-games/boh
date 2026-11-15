@@ -7,6 +7,7 @@
 import type { BohConfig } from '../config';
 import type { FetchFn } from '../http';
 import type { PopupEnv } from '../oauth';
+import type { TagChange } from '../tags';
 import type { TokenStore } from '../token-store';
 
 /** Provider codes, as used in links and config. */
@@ -73,6 +74,43 @@ export interface PasteMeta {
   access?: 'anonymous' | 'token';
   /** Provider-specific detail a later call needs (a download URL, a shared link). */
   source?: string;
+  /** Normalized manual tags, sorted; absent when the provider has no tag storage. */
+  tags?: string[];
+  /** Whether the account may change this file; absent: unknown (a write may still be refused). */
+  canEdit?: boolean;
+  /** Whether the account owns this file. */
+  ownedByMe?: boolean;
+}
+
+/** What a provider supports beyond the core contract. */
+export interface ProviderCapabilities {
+  /** Manual tags: `upload` with tags and `setTags`. */
+  tags: boolean;
+  /** Bin links and shared bins: `describeFolder`, `folderRef` and `refOfFolder`. */
+  binLinks: boolean;
+}
+
+/** A folder's owner and the account's rights in it. */
+export interface FolderInfo {
+  name: string;
+  owner?: { name: string; email?: string };
+  ownedByMe: boolean;
+  /** Whether the account may add files to it. */
+  canAdd: boolean;
+}
+
+/** Options of `Provider.upload`. */
+export interface UploadOptions {
+  /** Normalized manual tags, set together with the file. */
+  tags?: string[];
+}
+
+/** Options of `Provider.pickFolder`. */
+export interface PickFolderOptions {
+  /** Offer the folders shared with the user instead of their own. */
+  shared?: boolean;
+  /** Preset the picker to this folder (to let boh open a linked bin). */
+  folderId?: string;
 }
 
 /** A page of a bin's listing. */
@@ -102,6 +140,8 @@ export interface Provider {
   readonly configured: boolean;
   /** The largest paste `upload` accepts. */
   readonly maxUploadBytes: number;
+  /** What this provider supports beyond the core contract. */
+  readonly capabilities: ProviderCapabilities;
 
   /**
    * Signs in. Interactive sign-in opens a popup and must be called synchronously from a click.
@@ -126,7 +166,7 @@ export interface Provider {
   writeConfig(text: string, rev: string | null): Promise<string>;
 
   /** Lets the user pick a folder in the provider's own picker (Drive); `null` when cancelled. */
-  pickFolder?(): Promise<FolderRef | null>;
+  pickFolder?(options?: PickFolderOptions): Promise<FolderRef | null>;
   /** The folders in `parent` (`null`: the top level), for boh's folder browser. */
   listFolders?(parent: FolderRef | null): Promise<FolderRef[]>;
   /** Creates a folder in `parent` (default: the top level). */
@@ -136,8 +176,19 @@ export interface Provider {
 
   /** The pastes in `folder`, newest first where the provider allows. */
   list(folder: FolderRef, cursor?: string): Promise<ListPage>;
-  /** Uploads a new file; never overwrites (a clash gets a new name). */
-  upload(folder: FolderRef, name: string, blob: Blob): Promise<PasteMeta>;
+  /**
+   * Uploads a new file; never overwrites (a clash gets a new name). Tags are set with the file.
+   * @throws {ProviderError} `unsupported` when tags are given and `capabilities.tags` is false
+   * @throws {TagError} `too_many_tags`
+   */
+  upload(folder: FolderRef, name: string, blob: Blob, options?: UploadOptions): Promise<PasteMeta>;
+  /**
+   * Adds and removes manual tags of a paste, touching only those tags, and returns the paste's
+   * updated metadata. The limit is checked against the file's current tags.
+   * @throws {TagError} `too_many_tags`
+   * @throws {ProviderError} `forbidden`, `not_found`, `unsupported` (no tag storage)
+   */
+  setTags(meta: PasteMeta, change: TagChange, signal?: AbortSignal): Promise<PasteMeta>;
   /**
    * The link reference of a paste for a bin of `visibility` (see the design's section 4.4).
    * @throws {ProviderError} `unsupported` when the provider refuses that kind of link
@@ -160,6 +211,19 @@ export interface Provider {
   fetch(meta: PasteMeta, options: FetchOptions): Promise<Blob>;
   /** The folder in the provider's UI. */
   folderUrl(folder: FolderRef): string | undefined;
+
+  /**
+   * The folder's name, owner and the account's rights (`capabilities.binLinks`).
+   * @throws {ProviderError} `needs_sign_in`, `needs_grant` (Drive: pick it first), `not_found`
+   */
+  describeFolder?(folder: FolderRef): Promise<FolderInfo>;
+  /** The bin link reference of a folder (`capabilities.binLinks`). */
+  refOfFolder?(folder: FolderRef): string;
+  /**
+   * The folder a bin link reference names; its `name` is empty until `describeFolder`.
+   * @throws {LinkError} when the reference is damaged
+   */
+  folderRef?(ref: string): FolderRef;
 }
 
 /** What a provider module needs from its surroundings; the tests replace each part. */

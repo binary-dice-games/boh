@@ -9,11 +9,14 @@ describe('a provider the build leaves out', () => {
     expect(p.account()).toBeNull();
     expect(p.pickFolder).toBeUndefined();
     expect(p.listFolders).toBeUndefined();
+    expect(p.capabilities).toEqual({ tags: false, binLinks: false });
+    expect(p.describeFolder).toBeUndefined();
     for (const call of [
       () => p.signIn({ stay: true }),
       () => p.readConfig(),
       () => p.openRef('abc'),
       () => p.upload({ id: 'f', name: 'f' }, 'a.txt', new Blob(['a'])),
+      () => p.setTags({ provider: 'db', key: 'k', name: 'a.txt' }, { add: ['x'] }),
     ]) {
       await expect(call()).rejects.toMatchObject({ reason: 'not_configured' });
     }

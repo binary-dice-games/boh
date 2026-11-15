@@ -6,10 +6,12 @@ import type { BinEntry } from '../bin-store';
 import { reasonOf } from '../errors';
 import { extensionOf, formatSize, pasteFileName, TEXT_FORMATS } from '../formats';
 import { PROVIDER_IDS, PROVIDER_LABELS } from '../providers/provider';
+import { isTag, matchRules, sortTags } from '../tags';
 import { openBinDialog } from './bin-dialog';
 import type { AppContext } from './context';
 import { button, copyText, external, field, formatTime, h, select } from './dom';
 import { errorText, sharingMismatch, sharingText, VISIBILITY_LABELS } from './messages';
+import { tagEditor } from './tag-editor';
 
 /** The home view. */
 export function homeView(ctx: AppContext, root: HTMLElement): () => void {
@@ -66,6 +68,30 @@ function newPasteForm(
   });
   const fileInput = h('input', { id: 'paste-file', type: 'file' });
   const fileChip = h('p', { class: 'file-chip', hidden: true });
+
+  // Tags: the bin's default tags and the rules' tags are preselected; what the user removes stays
+  // removed and what they add stays added while they change the bin, the name or the format.
+  let autoTags: string[] = [];
+  const added = new Set<string>();
+  const dismissed = new Set<string>();
+  const currentTags = () => sortTags([...autoTags.filter((t) => !dismissed.has(t)), ...added]);
+  const tags = tagEditor({
+    id: 'paste-tags',
+    tags: [],
+    suggestions: () => ctx.library.knownTags(),
+    onChange: (change) => {
+      for (const t of change.remove ?? []) {
+        added.delete(t);
+        dismissed.add(t);
+      }
+      for (const t of change.add ?? []) {
+        dismissed.delete(t);
+        added.add(t);
+      }
+      return currentTags();
+    },
+  });
+  const tagsField = field('Tags', tags.element, 'Press Enter or type a comma after each tag');
   const upload = h('button', {
     type: 'submit',
     id: 'paste-upload',
@@ -89,7 +115,41 @@ function newPasteForm(
     fileChip.hidden = !f;
     text.disabled = Boolean(f);
     format.disabled = Boolean(f);
+    updateTags();
   };
+
+  /** The file name the paste will get (the time stamp is a stand-in until upload). */
+  const pendingName = (binFormat?: string): string => {
+    if (file) {
+      return title.value.trim()
+        ? pasteFileName(title.value, extensionOf(file.name) || 'bin')
+        : file.name;
+    }
+    return pasteFileName(title.value, format.value || binFormat || 'txt');
+  };
+
+  const updateTags = () => {
+    const entry = ctx.store.find(binSelect.value);
+    const usable = entry !== undefined && ctx.providers[entry.provider].capabilities.tags;
+    tagsField.hidden = !usable;
+    if (!entry || !usable) {
+      return;
+    }
+    const name = pendingName(entry.bin.defaultFormat);
+    autoTags = sortTags([
+      ...(entry.bin.defaultTags ?? []).filter(isTag),
+      ...matchRules(ctx.store.rules(entry.provider), entry.bin.id, { name, mime: file?.type }),
+    ]);
+    tags.set(currentTags());
+  };
+  const resetTags = () => {
+    added.clear();
+    dismissed.clear();
+    updateTags();
+  };
+  binSelect.addEventListener('change', updateTags);
+  format.addEventListener('change', updateTags);
+  title.addEventListener('input', updateTags);
   fileInput.addEventListener('change', () => setFile(fileInput.files?.[0]));
   text.addEventListener('paste', (event) => {
     const image = [...(event.clipboardData?.files ?? [])].find((f) => f.type.startsWith('image/'));
@@ -114,6 +174,7 @@ function newPasteForm(
     field('Text', text),
     h('div', { class: 'row' }, field('Or a file', fileInput)),
     fileChip,
+    tagsField,
     h('div', { class: 'actions' }, upload),
     result,
   );
@@ -147,6 +208,7 @@ function newPasteForm(
         ? 'Connect a cloud account above, then add a bin: a folder of yours where pastes go.'
         : 'Add a bin below: a folder of yours where pastes go.';
     empty.hidden = usable;
+    updateTags();
   };
   updateBins();
 
@@ -162,9 +224,7 @@ function newPasteForm(
       let name: string;
       let blob: Blob;
       if (file) {
-        name = title.value.trim()
-          ? pasteFileName(title.value, extensionOf(file.name) || 'bin')
-          : file.name;
+        name = pendingName();
         blob = file;
       } else {
         if (!text.value.trim()) {
@@ -186,9 +246,17 @@ function newPasteForm(
         return;
       }
       upload.disabled = true;
+      await tags.commit();
+      const pasteTags = provider.capabilities.tags ? tags.tags() : [];
       result.replaceChildren(h('p', { text: `Uploading ${name}…` }));
       try {
-        const meta = await provider.upload(entry.bin.folder, name, blob);
+        const meta = await provider.upload(
+          entry.bin.folder,
+          name,
+          blob,
+          pasteTags.length ? { tags: pasteTags } : undefined,
+        );
+        ctx.library.add(entry.bin.id, meta);
         ctx.local.setPrefs({ lastBin: entry.bin.id });
         let link: string | undefined;
         let problem: string | undefined;
@@ -212,6 +280,7 @@ function newPasteForm(
         title.value = '';
         fileInput.value = '';
         setFile(undefined);
+        resetTags();
       } catch (e) {
         result.replaceChildren(
           h('p', { class: 'problem', text: `Upload failed. ${errorText(e, entry.provider)}` }),
@@ -274,7 +343,12 @@ function drawBinList(ctx: AppContext, section: HTMLElement): void {
   });
   const list = h('ul', { class: 'bin-list' });
   section.replaceChildren(
-    h('div', { class: 'section-head' }, h('h2', { id: 'bins-title', text: 'Bins' }), add),
+    h(
+      'div',
+      { class: 'section-head' },
+      h('h2', { id: 'bins-title', text: 'Bins' }),
+      h('div', { class: 'actions' }, h('a', { href: '#library', text: 'Search all pastes' }), add),
+    ),
     list,
   );
 
@@ -340,6 +414,12 @@ function drawBinList(ctx: AppContext, section: HTMLElement): void {
             class: `badge ${entry.bin.visibility}`,
             text: VISIBILITY_LABELS[entry.bin.visibility],
           }),
+          entry.bin.shared
+            ? h('span', {
+                class: 'badge shared',
+                text: entry.bin.owner ? `Shared by ${entry.bin.owner.name}` : 'Shared with me',
+              })
+            : null,
           h('span', { class: 'muted', text: PROVIDER_LABELS[entry.provider] }),
           sharing,
         ),

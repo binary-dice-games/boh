@@ -79,6 +79,19 @@ export class LinkError extends BohError {
   }
 }
 
+/** Why a tag was refused. */
+export type TagReason = 'invalid_tag' | 'too_many_tags';
+
+/** A tag cannot be used, or a paste would carry too many tags. */
+export class TagError extends BohError {
+  constructor(
+    override readonly reason: TagReason,
+    message?: string,
+  ) {
+    super(reason, message);
+  }
+}
+
 /** The `reason` of any thrown value: `BohError.reason`, `aborted` for aborts, else `failed`. */
 export function reasonOf(error: unknown): string {
   if (error instanceof BohError) {

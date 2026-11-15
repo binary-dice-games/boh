@@ -1,11 +1,17 @@
 // MIT License © 2026 Binary Dice Games
-/** @file A bin's pastes: view, copy the link, open in the provider, delete. */
+/**
+ * @file A bin's pastes: view, copy the link, open in the provider, delete; their tags; the bin's
+ * link for people the folder is shared with.
+ */
 import type { BinEntry } from '../bin-store';
 import { formatSize } from '../formats';
 import { PROVIDER_LABELS, type PasteMeta } from '../providers/provider';
+import { binToken } from '../query';
+import { derivedTags } from '../tags';
 import type { AppContext } from './context';
 import { button, copyText, external, formatTime, h } from './dom';
 import { errorText, sharingMismatch, sharingText, VISIBILITY_LABELS } from './messages';
+import { tagChips } from './tag-editor';
 
 /** The view of the bin `binId`. */
 export function binView(ctx: AppContext, root: HTMLElement, binId: string): () => void {
@@ -43,6 +49,18 @@ function drawBin(ctx: AppContext, root: HTMLElement, entry: BinEntry): void {
   const more = button('Load more', () => void load(cursor), { hidden: true });
   const status = h('p', { class: 'muted' });
   let cursor: string | undefined;
+  const binLink = ctx.binLink(entry);
+  const owner = entry.bin.shared
+    ? h('p', {
+        class: 'muted',
+        id: 'bin-owner',
+        text: `Shared with you${entry.bin.owner ? ` by ${entry.bin.owner.name}` : ''}. ${
+          entry.provider === 'gd'
+            ? 'Google Drive may show boh only the pastes you opened or added here; open the others from their links.'
+            : ''
+        }`,
+      })
+    : null;
 
   root.replaceChildren(
     h(
@@ -61,6 +79,7 @@ function drawBin(ctx: AppContext, root: HTMLElement, entry: BinEntry): void {
         class: 'muted',
         text: `${PROVIDER_LABELS[entry.provider]} folder ${entry.bin.folder.path ?? entry.bin.folder.name}`,
       }),
+      owner,
       sharing,
       warning,
       h(
@@ -74,6 +93,23 @@ function drawBin(ctx: AppContext, root: HTMLElement, entry: BinEntry): void {
           table.replaceChildren();
           void load(undefined);
         }),
+        binLink
+          ? button(
+              'Copy bin link',
+              async () => {
+                ctx.notify(
+                  (await copyText(binLink))
+                    ? 'Bin link copied. It opens only for people the folder is shared with.'
+                    : binLink,
+                );
+              },
+              { id: 'copy-bin-link', 'data-link': binLink },
+            )
+          : null,
+        h('a', {
+          href: `#library?q=${encodeURIComponent(binToken(entry.bin.name))}`,
+          text: 'Search and tag in the library',
+        }),
       ),
       h(
         'table',
@@ -85,6 +121,7 @@ function drawBin(ctx: AppContext, root: HTMLElement, entry: BinEntry): void {
             'tr',
             {},
             h('th', { text: 'Name' }),
+            h('th', { text: 'Tags' }),
             h('th', { text: 'Size' }),
             h('th', { text: 'Changed' }),
             h('th', { text: '' }),
@@ -136,6 +173,7 @@ function drawBin(ctx: AppContext, root: HTMLElement, entry: BinEntry): void {
       }
       provider.remove(meta).then(
         () => {
+          ctx.library.remove(meta);
           tr.remove();
           if (table.childElementCount === 0 && !cursor) {
             status.textContent = 'No pastes in this bin yet.';
@@ -147,6 +185,7 @@ function drawBin(ctx: AppContext, root: HTMLElement, entry: BinEntry): void {
     });
     tr.append(
       h('td', { text: meta.name }),
+      h('td', {}, tagChips(meta.tags ?? [], derivedTags(meta).slice(1, 2))),
       h('td', { text: formatSize(meta.size) }),
       h('td', { text: formatTime(meta.modified) }),
       h(

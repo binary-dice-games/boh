@@ -16,6 +16,9 @@ implemented too but switched off on the site (see
 - **Renderers:** highlighted text, Markdown, HTML, images, audio, video, PDF.
   Text, Markdown and HTML render in a sandboxed frame with no access to boh;
   nothing in a paste runs, and remote pictures load only on request.
+- **Tags and a library:** tag pastes by hand or with rules, see automatic
+  `format:` and `kind:` tags, and search and filter every bin, your own and
+  those shared with you, by tag and name.
 - **No server, no tracking:** your list of bins is a small file in each
   service's private app area; everything else stays in your browser.
 

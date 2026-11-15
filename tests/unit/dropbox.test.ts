@@ -147,6 +147,20 @@ describe('Dropbox bins and pastes', () => {
     expect(await (await provider.fetch(listed.items[0]!, { maxBytes: 10 })).text()).toBe('22');
   });
 
+  it('has no tag storage: lists without tags and refuses tag writes', async () => {
+    const { provider } = dropbox({ user: 'dave' });
+    expect(provider.capabilities).toEqual({ tags: false, binLinks: false });
+    const folder = await provider.createFolder('NoTags');
+    await expect(
+      provider.upload(folder, 'x.txt', new Blob(['x']), { tags: ['a'] }),
+    ).rejects.toMatchObject({ reason: 'unsupported' });
+    const meta = await provider.upload(folder, 'x.txt', new Blob(['x']), { tags: [] });
+    expect(meta.tags).toBeUndefined();
+    await expect(provider.setTags(meta, { add: ['a'] })).rejects.toMatchObject({
+      reason: 'unsupported',
+    });
+  });
+
   it('pages a long listing', async () => {
     const { provider } = dropbox({ user: 'dave' });
     const folder = await provider.createFolder('Many');

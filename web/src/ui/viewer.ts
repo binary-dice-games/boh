@@ -24,9 +24,11 @@ import type { PasteLink } from '../links';
 import { PROVIDER_LABELS, type PasteMeta } from '../providers/provider';
 import { RenderHost } from '../render-host';
 import type { FrameRenderer } from '../render/protocol';
+import { derivedTags } from '../tags';
 import type { AppContext } from './context';
 import { button, copyText, external, h, select } from './dom';
 import { errorText } from './messages';
+import { tagChips, tagEditor } from './tag-editor';
 
 const RENDERER_LABELS: Record<Renderer, string> = {
   text: 'Text',
@@ -209,6 +211,7 @@ export function viewerView(
         meta.webUrl ? external(`Open in ${label}`, meta.webUrl) : null,
         linkInput,
       ),
+      tagRow(meta),
     );
     body.replaceChildren(content);
 
@@ -332,6 +335,43 @@ export function viewerView(
     };
 
     void draw();
+  };
+
+  /** Derived tags, and the manual tags with an editor when the viewer may change them. */
+  const tagRow = (meta: PasteMeta): HTMLElement => {
+    const row = h(
+      'div',
+      { class: 'viewer-tags', id: 'viewer-tags' },
+      tagChips([], derivedTags(meta)),
+    );
+    if (meta.tags === undefined || !provider.capabilities.tags) {
+      return row;
+    }
+    // A paste opened without a token says nothing about the viewer's rights: a signed-in viewer
+    // may try, and the provider decides.
+    const mayEdit =
+      provider.account() !== null && (meta.canEdit !== false || meta.access === 'anonymous');
+    let current = meta;
+    const editor = tagEditor({
+      id: 'viewer-tag-input',
+      tags: meta.tags,
+      readOnly: !mayEdit,
+      suggestions: () => ctx.library.knownTags(),
+      errorText: (e) =>
+        reasonOf(e) === 'forbidden'
+          ? `You cannot change the tags of this paste: its owner has not given you write access.`
+          : errorText(e, link.provider),
+      onChange: async (change) => {
+        current = await provider.setTags(current, change, controller.signal);
+        ctx.library.update(current);
+        return current.tags;
+      },
+    });
+    if (!mayEdit && meta.tags.length === 0) {
+      return row;
+    }
+    row.prepend(editor.element);
+    return row;
   };
 
   const download = async (meta: PasteMeta) => {

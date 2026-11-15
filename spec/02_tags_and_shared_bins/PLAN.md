@@ -21,6 +21,8 @@ shared folder?; (e) OneDrive: any per-app file metadata on personal and work
 accounts.
 **Tests:** none (manual, recorded here and in `docs/manual-testing.md`).
 
+**Result:** open: needs real accounts (Binary Dice Games). Steps 2 to 10 assume (a), (b) and (c) answer yes, as the fake does; if (c) answers no, shared Drive bins list only what the reader opened (design section 4.7). Dropbox and OneDrive have no manual tags and no bin links until (d) and (e) are answered. Checks listed in `docs/manual-testing.md`.
+
 ## 2. Tags, derived tags and rules
 
 **Goal:** the provider-independent tag logic.
@@ -32,6 +34,8 @@ rejected characters, byte limit, Unicode letters), derived tags for every
 renderer and for names without extension, rule matching (bins, globs,
 format, kind, deduplication), key round trip and length bound.
 
+**Result:** done; also `applyTagChange`. 15 tests in `tags.test.ts`.
+
 ## 3. Query language
 
 **Goal:** `parseQuery` and `matches` of design section 3.6.
@@ -39,6 +43,8 @@ format, kind, deduplication), key round trip and length bound.
 **Tests:** `tests/unit/query.test.ts`: every term of the table, negation,
 comma OR, quoted phrases, accent-insensitive names, unknown prefixes as text,
 hostile and empty input never throws.
+
+**Result:** done, plus token helpers (`toggleToken`, `replaceTokens`, `binToken`) for the facets. 12 tests in `query.test.ts`.
 
 ## 4. Provider contract and Drive tags
 
@@ -57,6 +63,8 @@ remove, concurrent patches from two accounts merge, foreign keys untouched,
 dropped; Dropbox and OneDrive tests: `unsupported`, `describeFolder`;
 `disabled-provider.test.ts`.
 
+**Result:** done. `describeFolder`, `folderRef` and `refOfFolder` are optional members behind `capabilities.binLinks`, so Dropbox and OneDrive only gained `capabilities` and an `unsupported` `setTags`; `pickFolder` also takes `folderId` (opening a bin link). The fake Drive keeps writers and readers apart and enforces Drive's property limits.
+
 ## 5. Config: rules, default tags, shared bins
 
 **Goal:** the config carries design sections 3.3 and 3.4.
@@ -66,6 +74,8 @@ remove rules and to add a shared bin; removing a bin prunes its rules.
 **Tests:** `tests/unit/bin-store.test.ts`: round trip, unknown fields still
 preserved, a config written by this build read by the 01 parser, conflicts
 retried with rules.
+
+**Result:** done; `BinStore.addRule`, `updateRule`, `removeRule`, `rules`, `findFolder`. The dialog adds and deletes rules; editing one in place is delete and add.
 
 ## 6. Library index
 
@@ -77,6 +87,8 @@ as a dev dependency only if Node lacks IndexedDB): cache first, 5,000 cap,
 one failing bin, facets and counts, updates after writes, cache expiry and
 `forget`.
 
+**Result:** done; the cache is a `LibraryCache` interface (IndexedDB in the browser, `MemoryLibraryCache` in Node), so no `fake-indexeddb` dependency. Bulk edits in `web/src/bulk-tags.ts` and `web/src/pool.ts` are tested in `library-index.test.ts`.
+
 ## 7. Bin links
 
 **Goal:** `#v1/bin/<provider>/<ref>`.
@@ -84,6 +96,8 @@ one failing bin, facets and counts, updates after writes, cache expiry and
 view, the opening sequence of design section 4.6 with *Add to my bins*.
 **Tests:** `tests/unit/links.test.ts`: round trip, strict parsing, paste links
 unchanged; `tests/e2e/shared-bins.test.ts` (step 9).
+
+**Result:** done for Google Drive (`web/src/ui/bin-link.ts`).
 
 ## 8. Tag UI and library
 
@@ -100,6 +114,8 @@ rule's tags, edit tags in the viewer, filter and search, bulk rename with one
 forbidden paste skipped, a tag named like HTML shown as text, URL query
 restored on reload.
 
+**Result:** done; rules dialog in `web/src/ui/rules-dialog.ts`. `tests/e2e/library.test.ts` also checks the cached library with the service down and that disconnecting empties the cache.
+
 ## 9. Shared bins
 
 **Goal:** a second account browses and tags the first account's bin.
@@ -111,6 +127,8 @@ restored on reload.
 bin, sees the owner's tags, the writer edits them and the reader cannot; the
 owner sees the writer's tags after *Refresh*.
 
+**Result:** done, except *Grant access to more*, which waits for step 1 (c); a shared Drive bin's view says that boh may see only the pastes the reader opened.
+
 ## 10. Documentation and release
 
 **Goal:** users and maintainers know the feature.
@@ -120,6 +138,8 @@ step 1); `docs/testing.md` (new tests); README feature list; CHANGELOG;
 `spec/INDEX.md` status.
 **Tests:** every new test file registered with `boh_add_test` in
 `tests/CMakeLists.txt`.
+
+**Result:** done.
 
 ## Completion Criteria
 

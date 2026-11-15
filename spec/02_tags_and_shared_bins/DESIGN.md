@@ -37,8 +37,9 @@ before their spike (section 6, plan step 1); boh changing anyone's sharing
 
 Owned and changed files: `web/src/tags.ts` (new: normalization, derived tags,
 rules), `web/src/query.ts` (new: search language), `web/src/library-index.ts`
-(new: listing cache and filtering), `web/src/ui/library.ts` and
-`web/src/ui/tag-editor.ts` (new), `web/src/providers/provider.ts`,
+(new: listing cache and filtering), `web/src/bulk-tags.ts` and
+`web/src/pool.ts` (new: bulk edits, bounded concurrency), `web/src/ui/library.ts`,
+`tag-editor.ts`, `rules-dialog.ts` and `bin-link.ts` (new), `web/src/providers/provider.ts`,
 `google-drive.ts`, `google-picker.ts`, `dropbox.ts`, `onedrive.ts`,
 `disabled.ts`, `web/src/config-file.ts`, `web/src/bin-store.ts`,
 `web/src/links.ts`, the existing views in `web/src/ui/`, tests and fakes in
@@ -228,8 +229,8 @@ From the bin dialog, *Add a folder shared with me*:
   views (`DocsView(FOLDERS).setOwnedByMe(false)`, `setEnableDrives(true)`).
   Picking grants boh `drive.file` access to the folder.
 - **Dropbox and OneDrive**: 01's folder browser already lists shared folders
-  at the top level; the folder is marked `shared` when its owner is not the
-  account.
+  at the top level; until their spike gives them `describeFolder`, the user
+  ticks *Someone else owns this folder* to mark the bin `shared`.
 
 boh reads the folder's metadata (`describeFolder`: name, owner, `canAdd`) and
 sharing, and the user names the bin. The bin is written to the user's own
@@ -243,9 +244,10 @@ The owner of a bin presses *Copy bin link* and sends:
 https://<org>.github.io/boh/#v1/bin/<provider>/<ref>[?n=<name>]
 ```
 
-`<ref>` is base64url of the provider's folder reference (Drive: folder id or
-`<id>/<resourceKey>`; Dropbox: the folder's shared link or `ns:<namespace
-id>`; OneDrive: `<driveId>/<itemId>`). `bin` is not a provider code, so
+`<ref>` is base64url of the provider's folder reference: the Drive folder id.
+Dropbox and OneDrive have no bin links yet (`capabilities.binLinks` false):
+their folder references differ per user for shared folders, which their spike
+(plan step 1) settles. `bin` is not a provider code, so
 builds without this project reject the link as invalid instead of opening a
 folder as a paste. No new sharing is made: the link only works for people the
 folder is already shared with (01 goal 2), and the dialog says so next to the
@@ -262,10 +264,11 @@ opens directly.
 A Drive folder picked by a reader lists only the files `drive.file` lets boh
 see. Whether a Picker grant on a folder covers the files in it is 01 plan
 step 1 (a), still open. If it does not, a shared bin lists only the pastes
-the reader opened or granted one by one, and the library says "boh can only
-see the pastes you opened from this bin" with *Grant access to more*
-(Picker with multi-select over the folder). This is the one known limit of
-shared bins on Drive; it needs no design change if step 1 (a) answers yes.
+the reader opened or granted one by one, and the shared bin's view says so
+(open the others from their links). A *Grant access to more* button (Picker
+with multi-select over the folder) waits for that answer. This is the one
+known limit of shared bins on Drive; it needs no design change if step 1 (a)
+answers yes.
 
 ## 5. Public API contract
 
@@ -273,17 +276,19 @@ shared bins on Drive; it needs no design change if step 1 (a) answers yes.
 
 | Member | Contract |
 |---|---|
-| `capabilities: { tags: boolean }` | Whether `setTags` and upload tags work |
+| `capabilities: { tags: boolean; binLinks: boolean }` | Whether `setTags` and upload tags work; whether the folder members below exist (Drive only for now) |
 | `PasteMeta.tags?: string[]` | Normalized manual tags, sorted; absent when the provider has no tag storage. Entries that fail `normalizeTag` are dropped on read |
 | `PasteMeta.canEdit?: boolean` | Whether the account may change this file (Drive `capabilities.canEdit`); absent means unknown, treated as yes until a write says `forbidden` |
 | `PasteMeta.ownedByMe?: boolean` | For *from:* and display |
 | `upload(folder, name, blob, opts?: { tags?: string[] })` | As 01, plus tags set atomically with the file; `unsupported` if tags are given and `capabilities.tags` is false |
 | `setTags(meta, change: { add?: string[]; remove?: string[] }, signal?)` | Applies only the given changes and returns the updated `PasteMeta`. Rejects `TagError('too_many_tags')` when the result would exceed 25 (checked against the file's current tags, not the cached ones), `ProviderError` `forbidden`, `not_found`, `unsupported` |
-| `describeFolder(folder): Promise<FolderInfo>` | `{ name, owner?: { name, email? }, ownedByMe, canAdd }` |
-| `pickFolder?({ shared?: boolean })` | Drive: `shared` shows the shared-with-me and shared-drives views |
-| `folderRef(ref: string): FolderRef` / `refOfFolder(folder): string` | Bin link encoding (section 4.6); `LinkError('invalid_link')` on bad input |
+| `describeFolder?(folder): Promise<FolderInfo>` | `{ name, owner?: { name, email? }, ownedByMe, canAdd }`; Drive rejects `needs_grant` until the folder is picked |
+| `pickFolder?({ shared?, folderId? })` | Drive: `shared` shows the shared-with-me and shared-drives views; `folderId` presets the Picker to one folder (opening a bin link) |
+| `folderRef?(ref: string): FolderRef` / `refOfFolder?(folder): string` | Bin link encoding (section 4.6); `LinkError('invalid_link')` on bad input |
 
-`createDisabledProvider` gains the same members, rejecting `not_configured`.
+`createDisabledProvider` gains `capabilities` (all false) and `setTags`,
+rejecting `not_configured`. In the bin dialog, a provider without
+`describeFolder` relies on the user's *Someone else owns this folder* tick.
 
 ### 5.2 Core modules
 
@@ -292,10 +297,12 @@ shared bins on Drive; it needs no design change if step 1 (a) answers yes.
 | `normalizeTag(input): string` | Section 3.1; throws `TagError('invalid_tag')` |
 | `parseTagList(input): { tags, invalid }` | Splits on commas and Enter for the editor; never throws |
 | `derivedTags(meta): string[]` | Section 3.2; pure |
-| `matchRules(rules, binId, name, ext): string[]` | Section 3.3; pure, deduplicated |
-| `parseQuery(text): Query`, `matches(query, entry): boolean` | Section 3.6; never throw |
-| `LibraryIndex.load(bins, signal)`, `.query(query)`, `.facets(query)`, `.update(meta)`, `.forget(account)` | Section 3.5; `facets` returns tag counts over the current result |
-| `parseFragment` | Also returns `{ kind: 'bin', provider, ref, name? }` (01 section 4.4 grammar plus `bin`) |
+| `matchRules(rules, binId, { name, mime? }): string[]` | Section 3.3; pure, deduplicated, invalid rule tags dropped |
+| `applyTagChange(current, change)`, `tagKey(tag)`, `tagOfKey(key)` | Removals then additions, sorted, `too_many_tags` past 25; the Drive key encoding of section 4.1 |
+| `parseQuery(text): Query`, `matches(query, item): boolean` | Section 3.6; never throw. `toggleToken`, `replaceTokens`, `binToken` edit query text for the facets |
+| `LibraryIndex.load(bins, { refresh?, signal? })`, `.query(query)`, `.update(meta)`, `.add(binId, meta)`, `.remove(meta)`, `.forget(provider)`; `facets(entries)` | Section 3.5; `facets` counts tags, derived tags and bins over the given result. The cache is a `LibraryCache` (IndexedDB in the browser, memory in tests) |
+| `runBulk(entries, action, setTags, { signal?, onProgress? })` | Section 4.4; resolves with changed, unchanged, skipped, failed and cancelled pastes; never rejects |
+| `parseFragment` | Also returns `{ kind: 'bin', link: { provider, ref, name? } }`; `formatBinLink` makes one |
 
 `TagError` is a `BohError` with `reason` `invalid_tag` or `too_many_tags`
 (`web/src/errors.ts`).
@@ -321,7 +328,7 @@ exists are kept but ignored, and removed when that bin is removed.
 | Read-only tags for readers | Personal tags in the reader's config | Keeps one source of truth per paste; personal tags can be added later as a config field without changing this design |
 | Bin link as `#v1/bin/...` | A new version prefix; reusing the paste grammar | Old builds reject it cleanly (`bin` is not a provider); paste links are unchanged |
 | Shared bins in the reader's own config | A list of members kept by the owner | The provider already knows who has access; boh keeps no shared state (01 goal 1) |
-| Dropbox and OneDrive without manual tags until their spike | Inventing per-provider storage now | Both are off on the site; Dropbox file properties and OneDrive metadata need real-account checks first |
+| Dropbox and OneDrive without manual tags or bin links until their spike | Inventing per-provider storage and folder references now | Both are off on the site; Dropbox file properties and OneDrive metadata need real-account checks first |
 
 ## 7. Constraints and invariants
 

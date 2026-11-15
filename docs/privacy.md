@@ -9,5 +9,7 @@ OneDrive needs the policy updated first.
 
 In short: boh has no server; it reads and writes only the folders the user
 registers as bins, the files they open, and one settings file in each service's
-app area. Tokens, a copy of the settings, recent pastes and preferences stay in
-the browser. No analytics. Remote images inside a paste load only on request.
+app area (bins and tag rules). Tags are private file properties of boh on each
+paste's file. Tokens, a copy of the settings, recent pastes, the library's list
+of paste names and tags (IndexedDB, at most 30 days) and preferences stay in the
+browser; disconnecting deletes them. No analytics. Remote images inside a paste load only on request.
